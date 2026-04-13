@@ -139,7 +139,7 @@ def setup_readline() -> None:
     os.makedirs(FRANZ_DIR, exist_ok=True)
     try:
         readline.read_history_file(HISTORY_FILE)
-    except FileNotFoundError:
+    except OSError:
         pass
     readline.set_history_length(2000)
     atexit.register(readline.write_history_file, HISTORY_FILE)

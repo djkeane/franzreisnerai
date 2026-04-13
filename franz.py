@@ -146,7 +146,7 @@ def setup_readline() -> None:
 
 # ── Multi-line input ───────────────────────────────────────────
 def get_input(prompt_str: str) -> str:
-    """Bevitel: \ = soremelés-folytatás, ``` blokk = paste mód."""
+    r"""Bevitel: \ = soremelés-folytatás, ``` blokk = paste mód."""
     first = input(prompt_str).strip()
     if not first:
         return ""

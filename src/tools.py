@@ -57,6 +57,11 @@ AGENT_TOOLS: dict[str, str] = {
     "security_scan":    "Biztonsági sebezhetőség keresés. Args: {path: str, level: str?}",
     "generate_api":     "REST API endpoint generálása. Args: {model: str, format: str?}",
     "coverage_report":  "Tesztlefedettség analízis. Args: {path: str, threshold: float?}",
+    # ── NEW Tools (v7.5 Hungarian Grammar Teaching) ──────────────────
+    "teach_grammar":    "Magyar nyelvtani szabály tanítása. Args: {rule_id: str}",
+    "explain_grammar":  "Mondat nyelvtani elemzése. Args: {sentence: str, focus: str?}",
+    "practice_exercise":"Nyelvtani gyakorlat kitöltése. Args: {category: str?, difficulty: str?}",
+    "check_grammar":    "Szöveg nyelvtani ellenőrzése. Args: {text: str}",
 }
 
 # Patterns that are always blocked regardless of whitelist
@@ -357,6 +362,29 @@ def exec_tool(name: str, args: dict) -> str:
             path = args.get("path", "")
             threshold = args.get("threshold", 0.8)
             return coverage_report(path, threshold)
+
+        # ── Hungarian Grammar Teaching Tools (v7.5) ─────────────────
+        elif name == "teach_grammar":
+            rule_id = args.get("rule_id", "")
+            from src.workflows.hungarian_grammar import teach_grammar as teach_grammar_fn
+            return teach_grammar_fn(rule_id)
+
+        elif name == "explain_grammar":
+            sentence = args.get("sentence", "")
+            focus = args.get("focus", "all")
+            from src.workflows.hungarian_grammar import explain_grammar
+            return explain_grammar(sentence, focus)
+
+        elif name == "practice_exercise":
+            category = args.get("category", "case_practice")
+            difficulty = args.get("difficulty", "beginner")
+            from src.workflows.hungarian_grammar import practice_exercise
+            return practice_exercise(category, difficulty)
+
+        elif name == "check_grammar":
+            text = args.get("text", "")
+            from src.workflows.hungarian_grammar import check_grammar
+            return check_grammar(text)
 
         else:
             return f"[ERROR] Ismeretlen tool: {name}"

@@ -78,7 +78,7 @@ _DIR_RE = re.compile(
 )
 
 _SERVERS_RE = re.compile(
-    r"(szerver|port|szolgáltatás|daemon|futó\s+folyamat|listening)",
+    r"(szerver|port|szolgáltatás|daemon|futó\s+folyamat|listening|halgatóz|hallgatóz|szerv)",
     re.IGNORECASE,
 )
 
@@ -138,7 +138,7 @@ def natural_to_command(user_input: str) -> str | None:
     # Szerver/port lekérdezések (nagyobb prioritás mint /dir)
     # "nézd meg milyen szerverek futnak", "milyen portok vannak nyitva", stb.
     if _SERVERS_RE.search(s):
-        if re.search(r"^(nézd\s+meg|mutasd|milyen|mik\s+a|mik\s+az|futó|aktív)", s, re.IGNORECASE):
+        if re.search(r"^(nézd\s+meg|mutasd|milyen|mik\s+a|mik\s+az|futó|aktív|ellenőrizd)", s, re.IGNORECASE):
             return "/servers"
 
     if _DIR_RE.match(s):

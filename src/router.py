@@ -97,6 +97,32 @@ _LOOP_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ── Claude Code-szerű parancsok ──────────────────────────────────
+_GIT_RE = re.compile(
+    r"^(mi\s+változott|git\s+állapot|commitolj|mentsd\s+el|nézd\s+meg\s+a\s+változásokat)",
+    re.IGNORECASE,
+)
+
+_REVIEW_RE = re.compile(
+    r"^(nézd\s+át|review|ellenőrizd\s+a\s+kódot|van-e\s+hiba)",
+    re.IGNORECASE,
+)
+
+_EXPLAIN_RE = re.compile(
+    r"^(magyarázd\s+el|mit\s+csinál|hogyan\s+működik)",
+    re.IGNORECASE,
+)
+
+_TEST_RE = re.compile(
+    r"^(futtasd\s+a\s+teszteket|tesztelj|unit\s+teszt)",
+    re.IGNORECASE,
+)
+
+_SEARCH_RE = re.compile(
+    r"^(keresd|hol\s+van|melyik\s+fájlban|keresés)",
+    re.IGNORECASE,
+)
+
 
 def natural_to_command(user_input: str) -> str | None:
     """
@@ -150,6 +176,38 @@ def natural_to_command(user_input: str) -> str | None:
 
     if _LOOP_RE.match(s):
         return "/loop"
+
+    # ── Claude Code-szerű parancsok ──────────────────────────────
+    # Git: "mi változott" → "/git status"
+    if _GIT_RE.match(s):
+        if re.search(r"(mi\s+változott|git\s+állapot|nézd)", s, re.IGNORECASE):
+            return "/git status"
+        elif re.search(r"commitolj", s, re.IGNORECASE):
+            # "commitolj: fix bug" → "/git commit \"fix bug\""
+            msg = re.sub(r"^commitolj\s*:?\s*", "", s, flags=re.IGNORECASE).strip()
+            return f'/git commit "{msg}"' if msg else None
+        return "/git status"
+
+    # Fájlkeresés: "keresd config.py" → "/keresés config.py"
+    if _SEARCH_RE.match(s):
+        pattern = re.sub(r"^(keresd|keresés|hol\s+van|melyik\s+fájlban)\s+", "", s, flags=re.IGNORECASE).strip()
+        return f"/keresés {pattern}" if pattern else None
+
+    # Kód review: "nézd át az auth.py-t" → "/review auth.py"
+    if _REVIEW_RE.match(s):
+        file_match = re.search(r"([\w/\-_.]+(?:\.py|\.ts|\.js|\.go|\.java))", s)
+        if file_match:
+            return f"/review {file_match.group(1)}"
+
+    # Kód magyarázat: "magyarázd el a router.py-t" → "/magyaráz router.py"
+    if _EXPLAIN_RE.match(s):
+        file_match = re.search(r"([\w/\-_.]+(?:\.py|\.ts|\.js|\.go|\.java))", s)
+        if file_match:
+            return f"/magyaráz {file_match.group(1)}"
+
+    # Tesztelés: "futtasd a teszteket" → "/teszt"
+    if _TEST_RE.match(s):
+        return "/teszt"
 
     return None
 

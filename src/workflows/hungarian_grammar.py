@@ -349,16 +349,27 @@ def explain_grammar(sentence: str, focus: str = "all") -> str:
 
     # Detect cases and endings
     endings = {
-        "-t": "Tárgyeset (accusative)",
-        "-nak": "Részeshatározó (dative)",
-        "-ban": "Helyhatározó (locative)",
-        "-ból": "Elöljáró eset (ablative)",
+        "t": "Tárgyeset (accusative)",
+        "nak": "Részeshatározó (dative)",
+        "nek": "Részeshatározó (dative)",
+        "ban": "Helyhatározó (locative)",
+        "ben": "Helyhatározó (locative)",
+        "ból": "Elöljáró eset (ablative)",
+        "ből": "Elöljáró eset (ablative)",
     }
 
+    found_cases = []
     for word in words:
         for ending, case_name in endings.items():
-            if word.endswith(ending):
-                response += f"• '{word}' → {case_name} (-{ending[1:]})\n"
+            if word.endswith(ending) and len(word) > len(ending):
+                found_cases.append(f"• '{word}' → {case_name} (-{ending})")
+                break
+
+    if found_cases:
+        for case_str in found_cases:
+            response += f"{case_str}\n"
+    else:
+        response += "• Nincs speciális végződés — alanyeset vagy határozatlan alak.\n"
 
     response += f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

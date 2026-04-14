@@ -287,9 +287,9 @@ def listening_ports() -> str:
             connections = psutil.net_connections(kind="inet")
             listening = [c for c in connections if c.status == "LISTEN" and c.laddr]
         except (psutil.AccessDenied, psutil.Error):
-            # Fallback to lsof command
+            # Fallback to lsof command with LISTEN filter
             result = subprocess.run(
-                ["lsof", "-i", "-P", "-n"],
+                ["lsof", "-i", "-P", "-n", "-sTCP:LISTEN"],
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -300,13 +300,19 @@ def listening_ports() -> str:
                 seen = set()
                 for line in result.stdout.splitlines()[1:]:
                     parts = line.split()
-                    if len(parts) >= 10 and ("LISTEN" in line or "ESTABLISHED" in line):
+                    if len(parts) >= 9:
                         cmd = parts[0]
                         pid = parts[1]
+                        # Extract port from NAME column (parts[8])
                         name_port = parts[8]
-                        if name_port not in seen:
-                            seen.add(name_port)
-                            lines.append(f"{name_port:15} │ {cmd:10} │ {pid}")
+                        # Extract just the port number if in format *:PORT or 127.0.0.1:PORT
+                        port_match = re.search(r'[:\[](\d+)\]?$', name_port)
+                        if port_match:
+                            port_num = port_match.group(1)
+                            key = f"{port_num}:{cmd}"
+                            if key not in seen:
+                                seen.add(key)
+                                lines.append(f"{port_num:6} │ {cmd:8} │ {pid}")
                 return "\n".join(lines) if len(lines) > 1 else "(Nincs hallgatózó port)"
             raise psutil.AccessDenied("Cannot read network connections (need elevated privileges)")
 

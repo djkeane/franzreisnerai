@@ -48,6 +48,15 @@ AGENT_TOOLS: dict[str, str] = {
     "check_code_quality":"Kódminőség ellenőrzés (pylint, mypy). Args: {path: str, checks: list?}",
     "run_tests":        "Tesztek futtatása (pytest, unittest). Args: {path: str, framework: str?}",
     "suggest_fixes":    "AI alapú hiba javaslatokat. Args: {error_msg: str, code_snippet: str?}",
+    # ── NEW Tools (v7.5 Advanced Extensions) ──────────────────────
+    "refactor_code":    "AST-alapú kódrefaktorálás. Args: {path: str, refactor_type: str}",
+    "profile_code":     "Python kód profilozása (cProfile). Args: {path: str, function: str?, iterations: int?}",
+    "generate_docs":    "Dokumentáció auto-generálása. Args: {path: str, format: str?, style: str?}",
+    "code_review":      "AI alapú kódértékelés. Args: {path: str, focus: str?}",
+    "analyze_schema":   "Adatbázis séma elemzése. Args: {schema_file: str, db_type: str?}",
+    "security_scan":    "Biztonsági sebezhetőség keresés. Args: {path: str, level: str?}",
+    "generate_api":     "REST API endpoint generálása. Args: {model: str, format: str?}",
+    "coverage_report":  "Tesztlefedettség analízis. Args: {path: str, threshold: float?}",
 }
 
 # Patterns that are always blocked regardless of whitelist

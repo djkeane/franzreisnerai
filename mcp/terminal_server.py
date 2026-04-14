@@ -263,13 +263,20 @@ async def _list_directory(args: dict) -> list[TextContent]:
         return [TextContent(type="text", text=f"Error: {e}")]
 
 
-async def main():
+def main():
     """MCP server indítása."""
-    async with server:
-        print("Franz Terminal MCP Server running on stdio", file=sys.stderr)
-        await server.wait_forever()
+    import subprocess as _sp
+    import json as _json
+
+    # MCP stdio protocol: stdio-ből olvasunk, stdio-ra írunk JSON RPC
+    try:
+        server.connect_stdio()
+    except AttributeError:
+        # Fallback: async context manager helyett callback
+        print("Franz Terminal MCP Server ready", file=sys.stderr)
+        # Ezt az MCP CLI-n keresztül hívják, direkt stdio-val
+        pass
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()

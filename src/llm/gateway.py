@@ -60,6 +60,7 @@ class LLMGateway:
     def _classify_task(self, messages: list[dict]) -> str:
         """
         Intelligens feladat-osztályozás a prompt alapján.
+        Multi-signal heurisztika: szavak, karakterek, pattern-ek.
         """
         if not messages:
             return "general"
@@ -67,29 +68,47 @@ class LLMGateway:
         last_msg = messages[-1].get("content", "").lower()
         combined_context = " ".join([m.get("content", "").lower() for m in messages[-3:]])
 
-        # Kódolás kulcsszavak
-        code_keywords = ["python", "javascript", "typescript", "rust", "go", "kód ", " kód", "függvény", "class ", "class:", "api ", "script", "refaktor", "fix bug"]
+        # Kiterjesztett kódolás kulcsszavak (verifikáció, tesztelés nélkül)
+        code_keywords = [
+            "python", "javascript", "typescript", "rust", "go", "java", "c++", "c#",
+            "kód ", " kód", "függvény", "class ", "class:", "api ", "script", "refaktor",
+            "fix bug", "hiba javítás", "import ", "def ", "return ", "async", "await",
+            "docker", "kubernetes", "sql", "database", "api endpoint", "algoritmus"
+        ]
         # Kutatás/Elemzés
-        research_keywords = ["keress", "research", "browse", "github", "reddit", "elemzés", "audit", "dokumentáció"]
-        # Tervezés
-        planner_keywords = ["terv", "lépések", "hogyan kezdjem", "architektúra", "design", "workflow", "stratégia"]
-        # Ellenőrzés
-        verifier_keywords = ["tesztelj", "ellenőrizd", "működik", "verify", "check", "hiba?", "audit"]
+        research_keywords = [
+            "keress", "research", "browse", "github", "reddit", "elemzés", "audit",
+            "dokumentáció", "összehasonlít", "analiz", "tanulmány", "cikk", "forrás"
+        ]
+        # Tervezés/Architektúra
+        planner_keywords = [
+            "terv", "lépések", "hogyan kezdjem", "architektúra", "design", "workflow",
+            "stratégia", "folyamat", "megközelítés", "módszer", "fázis"
+        ]
+        # Ellenőrzés/Verifikáció
+        verifier_keywords = [
+            "tesztelj", "ellenőrizd", "működik", "verify", "check", "hiba?", "audit",
+            "tesztel", "unit test", "validiráció", "működésképes"
+        ]
 
-        if any(kw in last_msg for kw in verifier_keywords):
-            return "verifier"
-        if any(kw in last_msg for kw in planner_keywords):
-            return "planner"
-        
-        # Magyar nyelv detektálás (heuristic)
+        # Pontozás per kategória
+        score = {
+            "verifier": sum(1 for kw in verifier_keywords if kw in last_msg),
+            "planner": sum(1 for kw in planner_keywords if kw in last_msg),
+            "code": sum(1 for kw in code_keywords if kw in last_msg),
+            "research": sum(1 for kw in research_keywords if kw in last_msg),
+        }
+
+        # Legmagasabb pontszám nyer
+        best_match = max(score.items(), key=lambda x: x[1])
+        if best_match[1] >= 2:
+            return best_match[0]
+
+        # Magyar nyelv detektálás — fallback
         hu_chars = "áéíóöőúüű"
-        is_hungarian = any(char in last_msg for char in hu_chars) or any(kw in last_msg for kw in ["szia", "hogy vagy", "segíts"])
-        
-        if any(kw in last_msg for kw in code_keywords):
-            return "code"
-        if any(kw in last_msg for kw in research_keywords):
-            return "research"
-        
+        hu_count = sum(1 for char in last_msg if char in hu_chars)
+        is_hungarian = hu_count > 3 or any(kw in last_msg for kw in ["szia", "hogy vagy", "segíts", "szükségem van"])
+
         if is_hungarian:
             return "hungarian"
 
@@ -156,12 +175,12 @@ class LLMGateway:
         messages: list[dict],
         task_type: str = "auto",
         system: str = "",
-        temperature: float = 0.3,
-        max_tokens: int = 2048,
+        temperature: float = None,
+        max_tokens: int = None,
         use_cache: bool = True,
     ) -> str:
         """
-        Fő belépési pont — routing + failover + cache.
+        Fő belépési pont — routing + failover + cache + reasoning.
         Visszaadja a szöveges választ.
         """
         # Automatikus routing ha nincs explicit megadva
@@ -169,11 +188,44 @@ class LLMGateway:
             task_type = self._classify_task(messages)
             log_event("SMART_ROUTING", f"Classified as: {task_type}")
 
+        # Feladat-specifikus paraméter tuning
+        if temperature is None:
+            temperature = {
+                "code": 0.2,          # Pontosság: kód deterministikus
+                "verifier": 0.1,      # Ultra pontosság: ellenőrzés
+                "planner": 0.4,       # Kreativitás: tervezéshez
+                "research": 0.3,      # Kiegyensúlyozott: kutatás
+                "hungarian": 0.35,    # Normál: magyar szöveg
+                "general": 0.4,       # Normál: általános chat
+                "system": 0.1,        # Ultra pontosság: rendszer
+            }.get(task_type, 0.3)
+
+        if max_tokens is None:
+            max_tokens = {
+                "code": 3000,         # Bővebb kódhoz
+                "verifier": 1024,     # Rövid validáció
+                "planner": 2048,      # Részletes terv
+                "research": 2500,     # Hosszú kutatás
+                "hungarian": 2048,    # Normál
+                "general": 2048,      # Normál
+                "system": 1024,       # Rövid
+            }.get(task_type, 2048)
+
         # Cache ellenőrzés
         if use_cache:
             cached = self._cache.get(messages, task_type)
             if cached:
+                log_event("CACHE_HIT", f"{task_type}")
                 return cached
+
+        # Érvelési motor integrálása kód-feladatokhoz
+        if task_type == "code" and messages:
+            user_content = messages[-1].get("content", "")
+            # Csak ha nem kér már explicit érvelést
+            if "gondolkozz" not in user_content.lower() and "reason" not in user_content.lower():
+                enhanced = enhance_prompt_with_reasoning(user_content, include_reasoning=True)
+                messages = messages[:-1] + [{"role": "user", "content": enhanced}]
+                log_event("REASONING_INJECTED", f"Code task enhanced with chain-of-thought")
 
         request = LLMRequest(
             messages=messages,
@@ -218,13 +270,33 @@ class LLMGateway:
         messages: list[dict],
         task_type: str = "auto",
         system: str = "",
-        temperature: float = 0.3,
-        max_tokens: int = 2048,
+        temperature: float = None,
+        max_tokens: int = None,
     ) -> Iterator[str]:
-        """Streaming chat — szövegrészleteket yield-el."""
+        """Streaming chat — szövegrészleteket yield-el + érvelés."""
         if task_type == "auto":
             task_type = self._classify_task(messages)
             log_event("SMART_ROUTING", f"Stream classified as: {task_type}")
+
+        # Paraméter tuning (azonos, mint chat)
+        if temperature is None:
+            temperature = {
+                "code": 0.2, "verifier": 0.1, "planner": 0.4, "research": 0.3,
+                "hungarian": 0.35, "general": 0.4, "system": 0.1,
+            }.get(task_type, 0.3)
+
+        if max_tokens is None:
+            max_tokens = {
+                "code": 3000, "verifier": 1024, "planner": 2048, "research": 2500,
+                "hungarian": 2048, "general": 2048, "system": 1024,
+            }.get(task_type, 2048)
+
+        # Érvelés injektálása kód-taskokhoz
+        if task_type == "code" and messages:
+            user_content = messages[-1].get("content", "")
+            if "gondolkozz" not in user_content.lower():
+                enhanced = enhance_prompt_with_reasoning(user_content, include_reasoning=True)
+                messages = messages[:-1] + [{"role": "user", "content": enhanced}]
 
         request = LLMRequest(
             messages=messages,

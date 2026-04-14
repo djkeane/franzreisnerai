@@ -50,6 +50,7 @@ from src.tools import AGENT_TOOLS  # Phase A: tool registry
 from src.workflows.code_improve import coding_loop, generate_project
 from src.workflows.auto_learn import auto_learn
 from src.workflows.autonomous import get_autonomous
+from src.workflows.autonomous_v2 import start_autonomous_task
 from src.tools import (
     cat_file,
     disk_usage,
@@ -443,6 +444,7 @@ def _print_help() -> None:
   /projekt <feladat>  Többfájlos projekt generálása
   /tanul-web <téma>   Web keresés + tanulás (DuckDuckGo → RAG)
   /loop               Autonóm loop indítása (tanulás + fejlesztés)
+  /autonomous on <h>  Autonóm feladat végrehajtás (human-in-the-loop nélkül)
   /loop-status        Loop állapota
   /loop-stop          Loop leállítása
 
@@ -1126,6 +1128,20 @@ def handle_workflow_commands(user_input: str) -> bool:
             for topic in status["last_topics"][-5:]:
                 print(f"    • {topic['topic']}: {topic['facts']} fakt")
         print()
+        return True
+
+    # ── /autonomous ─────────────────────────────────────────────
+    if stripped.startswith("/autonomous on "):
+        task = stripped[15:].strip()
+        if not task:
+            print("  Használat: /autonomous on <feladat>")
+            return True
+        start_autonomous_task(task)
+        return True
+
+    if stripped == "franz autonomous on":
+        print("\033[93mFranz Autonóm mód készenlétben. Adj meg egy feladatot:\033[0m")
+        print("Példa: /autonomous on Készíts egy Flask alapú tennivaló listát.")
         return True
 
     return False

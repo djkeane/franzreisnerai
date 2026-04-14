@@ -20,40 +20,52 @@ class TaskType:
 # ── Kulcsszó halmazok ─────────────────────────────────────────────
 
 _AGENTIC_KEYWORDS = [
-    "telepít",
-    "majd",
-    "aztán",
-    "viszont",
-    "közben",
-    "deploy",
-    "lépés",
-    "csináld meg",
-    "automatikusan",
-    "futtat",
-    "konfigurál",
-    "generál",
-    "hozz létre",
-    "módosítsd",
-    "szerkeszd",
-    "javítsd meg",
-    "keress és",
-    "ellenőrizd majd",
-    "futtasd le",
-    "futtass",
-    "install",
-    "setup",
-    "build",
-    "create project",
-    "step by step",
-    "lépésről lépésre",
-    "majd indítsd",
-    "hajtsd végre",
-    "sorrend",
-    "workflow",
-    "először",
-    "ezután",
-    "végül",
-    "után",
+    # Magyar cselekvés igék (action verbs)
+    "telepít", "telepítsd",           # install
+    "készít", "készítsd", "készítsd el",  # create
+    "ír", "írj", "írsd",              # write
+    "olvas", "olvass el",             # read
+    "keress", "keressd",              # search
+    "javít", "javítsd", "javítsd meg",  # fix
+    "futtat", "futtass", "futtasd le", "futtasd",  # run
+    "indít", "indítsd",               # start
+    "állít le", "állítsd le",         # stop
+    "módosít", "módosítsd",           # modify
+    "szerkeszt", "szerkeszd",         # edit
+    "elemez", "elemezd",              # analyze
+    "ellenőriz", "ellenőrizd",        # check
+    "generál", "generáld",            # generate
+    "hozz létre",                     # create (phrase)
+    "nézd meg",                       # look at
+    "csináld meg", "csináld",         # do/make
+    "hajtsd végre",                   # execute
+    "töröld",                         # delete
+    "áthelyez", "helyezd át",         # move
+    "másolj", "másold le",            # copy
+    "tesztel", "teszteld",            # test
+    "deploy",                         # deploy
+    "build",                          # build
+    "install",                        # install (eng)
+    "setup",                          # setup (eng)
+    "create",                         # create (eng)
+    # Kötőszavak és sorrend-jelzők
+    "majd",                           # then
+    "aztán",                          # then/after
+    "ezután",                         # then/after
+    "végül",                          # finally
+    "után",                           # after
+    "először",                        # first
+    "utána",                          # after
+    "viszont",                        # but (implies action)
+    "közben",                         # meanwhile
+    # Szöveg kifejezések
+    "step by step",                   # step by step
+    "lépésről lépésre",              # step by step (hu)
+    "lépés",                          # step
+    "sorrend",                        # order/sequence
+    "workflow",                       # workflow
+    "automatikusan",                  # automatically
+    "konfigurál",                     # configure
 ]
 
 _CODE_KEYWORDS = [

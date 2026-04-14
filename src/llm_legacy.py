@@ -53,6 +53,7 @@ class StreamParser:
         self._buf = ""
         self._in_tool = False
         self._tool_buf = ""
+        self.had_parse_error: bool = False  # Phase A.3: JSON parse error flag
 
     def feed(self, chunk: str) -> str:
         """Process one chunk; return printable text portion."""
@@ -67,6 +68,7 @@ class StreamParser:
                         self.tool_calls.append(json.loads(raw))
                     except json.JSONDecodeError as exc:
                         log_event("TOOL_PARSE_ERROR", f"{exc}: {raw[:80]}")
+                        self.had_parse_error = True  # Phase A.3: Set flag on parse error
                     self._in_tool = False
                     self._tool_buf = ""
                     self._buf = ""

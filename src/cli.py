@@ -1093,7 +1093,19 @@ def main() -> None:
 
         # Phase A.4: Classify task type (agentic vs. regular)
         task = classify(stripped)
-        log_event("CLASSIFY", f"{task.type}, agentic={task.is_agentic}")
+        log_event("CLASSIFY", f"{task.type}, agentic={task.is_agentic}, confidence={task.confidence:.2f}")
+
+        # Phase D.5: Clarification — kérdezz vissza, ha bizonytalan (confidence < 0.6)
+        if task.confidence < 0.6 and task.clarification:
+            print(f"\033[33m❓ {task.clarification}\033[0m")
+            try:
+                clarified = get_input("  > ").strip()
+                if clarified:
+                    stripped = clarified
+                    task = classify(stripped)  # Re-classify with clarified input
+                    log_event("CLARIFIED", f"original='{stripped[:60]}', new confidence={task.confidence:.2f}")
+            except (KeyboardInterrupt, EOFError):
+                continue
 
         if task.is_agentic:
             # Agentic mode: use agent-specific prompt and tool registry

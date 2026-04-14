@@ -221,32 +221,31 @@ def claude_chat(prompt: str) -> str:
 
 # ── get_answer ─────────────────────────────────────────────────
 def get_answer(messages: List[Dict]) -> str:
-    """Ollama (default) → Ollama fallbacks → Gemini → Claude."""
-    # 1. Primary model
-    try:
-        result = ollama_chat(DEFAULT_MODEL, messages, stream=False)
-        if result:
-            return str(result)
-    except Exception as exc:
-        log_event("LLM_PRIMARY_FAIL", str(exc))
+    """VRAM-ban lévő modell → default → fallbacks → Gemini → Claude."""
+    # 1. VRAM-aware sorrend: VRAM-ban lévők elsőbbséget kapnak
+    loaded = get_loaded_models()
+    all_models = [DEFAULT_MODEL] + FALLBACK_MODELS
+    ordered = [m for m in all_models if m in loaded] + \
+              [m for m in all_models if m not in loaded]
 
-    # 2. Fallback models
-    for model in FALLBACK_MODELS:
+    for model in ordered:
         try:
             result = ollama_chat(model, messages, stream=False)
             if result:
-                log_event("FALLBACK_OK", f"model={model}")
+                if model != DEFAULT_MODEL:
+                    log_event("FALLBACK_OK", f"model={model} (VRAM: {model in loaded})")
                 return str(result)
-        except Exception:
+        except Exception as exc:
+            log_event("LLM_FAIL", f"{model}: {type(exc).__name__}")
             continue
 
-    # 3. Gemini
+    # 2. Gemini
     log_event("FALLBACK", "Switching to Gemini")
     user_prompt = messages[-1].get("content", "") if messages else ""
     result = gemini_chat(user_prompt)
     if not result.startswith("[GEMINI_ERROR]"):
         return result
 
-    # 4. Claude
+    # 3. Claude
     log_event("FALLBACK", "Switching to Claude")
     return claude_chat(user_prompt)

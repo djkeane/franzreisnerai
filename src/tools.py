@@ -262,16 +262,55 @@ def exec_tool(name: str, args: dict) -> str:
                     lines.append(f"[F] {item.name}  ({item.stat().st_size:,} B)")
             return "\n".join(lines) or "(üres könyvtár)"
 
-        elif name == "git":
-            git_args = args.get("args", "")
-            result = subprocess.run(
-                f"git {git_args}",
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            return (result.stdout + result.stderr).strip()[:4000]
+        elif name == "git_commit":
+            commit_msg = args.get("message", "Commit by Franz").replace('"', '\\"')
+            add_all = args.get("add_all", True)
+            try:
+                if add_all:
+                    subprocess.run("git add .", shell=True, check=True)
+                
+                # Co-authored flag hozzáadása ha Junie módosít
+                co_author = ' --trailer "Co-authored-by: Junie <junie@jetbrains.com>"'
+                res = subprocess.run(f'git commit -m "{commit_msg}"{co_author}', shell=True, capture_output=True, text=True)
+                
+                from src.ui.display import display_git_op
+                display_git_op("commit", commit_msg)
+                
+                return res.stdout if res.returncode == 0 else f"[ERROR] Git commit failed: {res.stderr}"
+            except Exception as e:
+                return f"[ERROR] git_commit: {e}"
+
+        elif name == "git_status":
+            res = subprocess.run("git status --short", shell=True, capture_output=True, text=True)
+            return res.stdout or "Minden változás commitolva (Clean)."
+
+        elif name == "git_diff":
+            path = args.get("path", ".")
+            res = subprocess.run(f"git diff {path}", shell=True, capture_output=True, text=True)
+            return res.stdout[:5000] if res.stdout else "Nincs vizuális különbség."
+
+        elif name == "run_tests":
+            path = args.get("path", ".")
+            framework = args.get("framework", "pytest")
+            # Megkeressük a virtuális környezetet ha van
+            python_bin = "python3"
+            if os.path.exists(".venv/bin/pytest"):
+                python_bin = ".venv/bin/python3 -m pytest"
+            elif os.path.exists("venv/bin/pytest"):
+                python_bin = "venv/bin/python3 -m pytest"
+            
+            cmd = f"{python_bin} {path}" if "pytest" in python_bin else f"{framework} {path}"
+            res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
+            
+            output = res.stdout + res.stderr
+            status = "SUCCESS" if res.returncode == 0 else "FAILED"
+            return f"[{status}] Tests results ({framework}):\n{output[:5000]}"
+
+        elif name == "tree":
+            path = args.get("path", ".")
+            depth = args.get("depth", 2)
+            res = subprocess.run(f"tree -L {depth} --noreport {path}", shell=True, capture_output=True, text=True)
+            return res.stdout[:8000]
 
         elif name == "web_fetch":
             url = args.get("url", "")

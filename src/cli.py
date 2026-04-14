@@ -21,11 +21,14 @@ from src.config import cfg
 from src.hooks import list_hooks, load_hooks, trigger_hook
 from src.llm import (
     MAX_TOOL_STEPS,
+    OLLAMA_URLS,
     STREAM_OUTPUT,
     StreamParser,
     get_answer,
+    get_loaded_models,
     ollama_chat,
     parse_tool_calls,
+    pick_best_model,
     strip_tool_blocks,
 )
 from src.memory import (
@@ -67,6 +70,42 @@ _BANNER = r"""
 _HISTORY_FILE = pathlib.Path.home() / ".franz_history"
 _DEFAULT_MODEL = cfg.get("ollama", "default_model", fallback="jarvis-hu-coder:latest")
 _CONFIRM_BASH = cfg.getboolean("agent", "confirm_bash", fallback=False)
+
+
+# ── Model warmup ───────────────────────────────────────────────
+
+def warmup_model(model: str) -> None:
+    """Betölti a modellt VRAM-ba a háttérben (blokkolásmentes)."""
+    import threading
+
+    try:
+        import requests as _req
+        _has_requests = True
+    except ImportError:
+        _has_requests = False
+
+    def _do() -> None:
+        for url in OLLAMA_URLS:
+            load_url = url.replace("/api/chat", "/api/generate")
+            try:
+                if _has_requests:
+                    _req.post(
+                        load_url,
+                        json={"model": model, "prompt": "", "keep_alive": "60m", "stream": False},
+                        timeout=(5, 300),
+                    )
+                else:
+                    import json as _json, urllib.request as _urlreq
+                    data = _json.dumps({"model": model, "prompt": "", "keep_alive": "60m", "stream": False}).encode()
+                    req = _urlreq.Request(load_url, data=data, headers={"Content-Type": "application/json"})
+                    with _urlreq.urlopen(req, timeout=300):
+                        pass
+                log_event("WARMUP_OK", model)
+                return
+            except Exception as exc:
+                log_event("WARMUP_FAIL", f"{model}@{url}: {exc}")
+
+    threading.Thread(target=_do, daemon=True, name="franz-warmup").start()
 
 
 # ── Readline setup ─────────────────────────────────────────────
@@ -469,6 +508,16 @@ def main() -> None:
 
     print(_BANNER)
     print(f"  Téma: \033[92m{topic}\033[0m  |  Agensek: {len(registry.list())}  |  Hook-ok: {len(list_hooks())}")
+
+    # VRAM-aware model warmup
+    loaded = get_loaded_models()
+    best = pick_best_model()
+    if best in loaded:
+        print(f"  Modell VRAM-ban: \033[92m{best}\033[0m")
+    else:
+        print(f"  Modell betöltés háttérben: \033[33m{best}\033[0m")
+        warmup_model(best)
+
     print("  Írd: \033[1m/help\033[0m a parancsokért, \033[1m/exit\033[0m a kilépéshez.\n")
     log_event("SESSION_START", f"topic={topic}")
 
@@ -538,7 +587,7 @@ def main() -> None:
         save_memory(topic, "user", stripped)
 
         print()
-        answer = agent_loop(messages)
+        answer = agent_loop(messages, model=pick_best_model())
         print()
 
         save_memory(topic, "assistant", answer)

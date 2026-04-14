@@ -276,14 +276,39 @@ def network_info(target: str = "") -> str:
 def listening_ports() -> str:
     """
     List all listening ports with associated processes.
-    Returns: port, PID, and process name for each LISTEN connection.
+    Falls back to lsof if psutil fails (permission issues).
     """
     if not _HAS_PSUTIL:
         return "[ERROR] psutil nincs telepítve."
 
     try:
-        connections = psutil.net_connections()
-        listening = [c for c in connections if c.status == "LISTEN"]
+        # First try psutil
+        try:
+            connections = psutil.net_connections(kind="inet")
+            listening = [c for c in connections if c.status == "LISTEN" and c.laddr]
+        except (psutil.AccessDenied, psutil.Error):
+            # Fallback to lsof command
+            result = subprocess.run(
+                ["lsof", "-i", "-P", "-n"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                lines = ["Port  │ Process  │ PID"]
+                lines.append("──────────────────────")
+                seen = set()
+                for line in result.stdout.splitlines()[1:]:
+                    parts = line.split()
+                    if len(parts) >= 10 and ("LISTEN" in line or "ESTABLISHED" in line):
+                        cmd = parts[0]
+                        pid = parts[1]
+                        name_port = parts[8]
+                        if name_port not in seen:
+                            seen.add(name_port)
+                            lines.append(f"{name_port:15} │ {cmd:10} │ {pid}")
+                return "\n".join(lines) if len(lines) > 1 else "(Nincs hallgatózó port)"
+            raise psutil.AccessDenied("Cannot read network connections (need elevated privileges)")
 
         if not listening:
             return "(Nincs hallgatózó port)"
@@ -291,23 +316,26 @@ def listening_ports() -> str:
         lines = ["Port  │ PID  │ Felhasználó   │ Folyamat"]
         lines.append("─────────────────────────────────────────")
 
-        for conn in sorted(listening, key=lambda x: x.laddr.port):
+        for conn in sorted(listening, key=lambda x: x.laddr.port if x.laddr else 0):
             port = conn.laddr.port
             pid = conn.pid
+            if not pid or not port:
+                continue
+
             try:
                 proc = psutil.Process(pid)
                 name = proc.name()
                 user = proc.username()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
                 name = "?"
                 user = "?"
 
             lines.append(f"{port:5} │ {pid:4} │ {user:<13} │ {name}")
 
-        return "\n".join(lines)
+        return "\n".join(lines) if len(lines) > 1 else "(Nincs hallgatózó port)"
     except Exception as exc:
         log_event("LISTENING_PORTS_ERROR", str(exc))
-        return f"[ERROR] listening_ports: {exc}"
+        return f"[INFO] Hallgatózó portok megtekintéséhez:\n  sudo python3 -c \"from src.tools import listening_ports; print(listening_ports())\""
 
 
 def running_services() -> str:

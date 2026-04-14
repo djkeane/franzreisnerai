@@ -742,6 +742,67 @@ def handle_agent_commands(user_input: str, history: List[Dict], registry) -> boo
     return False
 
 
+def handle_grammar_commands(user_input: str) -> bool:
+    """
+    Magyar nyelvtan tanító parancsok (v7.5):
+      /nyelvtan                       — Összes szabály listázása
+      /nyelvtan <rule_id>            — Egy szabály tanítása
+      /nyelvtan elemzés <mondat>     — Mondat elemzése
+      /nyelvtan gyakorlat            — Nyelvtani gyakorlat
+      /nyelvtan ellenőrzés <szöveg>  — Szöveg ellenőrzése
+    """
+    stripped = user_input.strip()
+
+    # ── Nyelvtan parancsok ──────────────────────────────────────
+    if stripped == "/nyelvtan" or stripped.startswith("/nyelvtan "):
+        from src.workflows.hungarian_grammar import (
+            list_all_rules, teach_grammar, explain_grammar,
+            practice_exercise, check_grammar
+        )
+
+        if stripped == "/nyelvtan":
+            print(list_all_rules())
+            return True
+
+        rest = stripped[10:].strip()
+
+        # /nyelvtan elemzés <mondat>
+        if rest.startswith("elemzés "):
+            sentence = rest[8:].strip()
+            print(explain_grammar(sentence))
+            return True
+
+        # /nyelvtan gyakorlat
+        if rest == "gyakorlat":
+            print(practice_exercise())
+            return True
+
+        # /nyelvtan ellenőrzés <szöveg>
+        if rest.startswith("ellenőrzés "):
+            text = rest[11:].strip()
+            print(check_grammar(text))
+            return True
+
+        # /nyelvtan <rule_id>
+        if rest and not rest.startswith(" "):
+            print(teach_grammar(rest))
+            return True
+
+    # ── Nyelvtan gyors parancsok ────────────────────────────────
+    if stripped.startswith("/nyt "):
+        from src.workflows.hungarian_grammar import teach_grammar
+        rule_id = stripped[5:].strip()
+        print(teach_grammar(rule_id))
+        return True
+
+    if stripped == "/nyt":
+        from src.workflows.hungarian_grammar import list_all_rules
+        print(list_all_rules())
+        return True
+
+    return False
+
+
 def handle_learn_commands(user_input: str) -> bool:
     """
     Tanulási parancsok:
@@ -1079,6 +1140,11 @@ def main() -> None:
         # ── Beépített eszközök ──────────────────────────────────
         if handle_tool_commands(stripped):
             log_event("CMD", stripped[:100])
+            continue
+
+        # ── Magyar Nyelvtan Tanító parancsok ─────────────────────
+        if handle_grammar_commands(stripped):
+            log_event("GRAMMAR_CMD", stripped[:100])
             continue
 
         # ── Plugin hook-ok ──────────────────────────────────────

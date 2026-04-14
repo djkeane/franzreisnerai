@@ -316,7 +316,240 @@ def exec_tool(name: str, args: dict) -> str:
         return f"[ERROR] {name}: {exc}"
 
 
-# ── Built-in command helpers ───────────────────────────────────
+# ── NEW Helper Functions (v7.1 Extensions) ────────────────────
+def _docker_exec(image: str, cmd: str, mount: str = "") -> str:
+    """Execute command in Docker container."""
+    if not image or not cmd:
+        return "[ERROR] image és cmd szükséges."
+
+    # Check if docker is available
+    docker_check = subprocess.run(["docker", "--version"], capture_output=True)
+    if docker_check.returncode != 0:
+        return "[ERROR] Docker nem érhető el. Telepítsd: docker install"
+
+    docker_cmd = f"docker run --rm {mount} {image} {cmd}"
+    if _is_dangerous(cmd):
+        return "[WARNING] Veszélyes parancs minta."
+
+    try:
+        result = subprocess.run(docker_cmd, shell=True, capture_output=True, text=True, timeout=60)
+        out = (result.stdout + result.stderr).strip()
+        return out[:6000] if out else "(empty output)"
+    except subprocess.TimeoutExpired:
+        return "[TIMEOUT] Docker parancs túl sokáig futott (>60s)."
+    except Exception as exc:
+        return f"[DOCKER_ERROR] {exc}"
+
+
+def _analyze_code(path: str) -> str:
+    """Analyze Python code using AST."""
+    try:
+        file_path = pathlib.Path(os.path.expanduser(path)).resolve()
+        if not file_path.exists():
+            return f"[ERROR] Fájl nem létezik: {path}"
+
+        code = file_path.read_text(encoding="utf-8")
+
+        try:
+            import ast
+            tree = ast.parse(code)
+
+            # Collect information
+            functions = []
+            classes = []
+            imports = []
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    functions.append({
+                        'name': node.name,
+                        'lineno': node.lineno,
+                        'args': len(node.args.args),
+                    })
+                elif isinstance(node, ast.ClassDef):
+                    classes.append({
+                        'name': node.name,
+                        'lineno': node.lineno,
+                        'methods': len([n for n in node.body if isinstance(n, ast.FunctionDef)]),
+                    })
+                elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                    if isinstance(node, ast.Import):
+                        imports.extend([alias.name for alias in node.names])
+                    else:
+                        imports.append(node.module or "")
+
+            result = f"📊 KÓD ELEMZÉS: {file_path.name}\n"
+            result += f"Sorok: {len(code.splitlines())}\n"
+            result += f"Függvények: {len(functions)}\n"
+            result += f"Osztályok: {len(classes)}\n"
+            result += f"Importok: {len(set(imports))}\n\n"
+
+            if functions:
+                result += "🔧 Függvények:\n"
+                for f in functions[:5]:
+                    result += f"  - {f['name']}() [sor {f['lineno']}, {f['args']} param]\n"
+
+            if classes:
+                result += "\n📦 Osztályok:\n"
+                for c in classes[:5]:
+                    result += f"  - class {c['name']} [sor {c['lineno']}, {c['methods']} method]\n"
+
+            return result
+        except SyntaxError as e:
+            return f"[SYNTAX_ERROR] {e.msg} (sor {e.lineno})"
+    except Exception as exc:
+        return f"[ANALYZE_ERROR] {exc}"
+
+
+def _check_code_quality(path: str, checks: list[str]) -> str:
+    """Check code quality using linters (pylint, mypy, black)."""
+    try:
+        file_path = pathlib.Path(os.path.expanduser(path)).resolve()
+        if not file_path.exists():
+            return f"[ERROR] Fájl nem létezik: {path}"
+
+        results = []
+
+        # Black (formatting check)
+        if "black" in checks:
+            try:
+                proc = subprocess.run(
+                    f"black --check {file_path}",
+                    shell=True, capture_output=True, text=True, timeout=10
+                )
+                if proc.returncode != 0:
+                    results.append(f"⚫ Black: Formázási hibák\n{proc.stdout[:200]}")
+                else:
+                    results.append("✓ Black: Formázás OK")
+            except:
+                results.append("⚠ Black: Nem telepítve (pip install black)")
+
+        # Pylint (style/error check)
+        if "pylint" in checks:
+            try:
+                proc = subprocess.run(
+                    f"pylint {file_path} --exit-zero",
+                    shell=True, capture_output=True, text=True, timeout=15
+                )
+                # Extract rating
+                lines = proc.stdout.split('\n')
+                for line in lines:
+                    if 'rated at' in line:
+                        results.append(f"🔍 Pylint: {line.strip()}")
+                        break
+            except:
+                results.append("⚠ Pylint: Nem telepítve (pip install pylint)")
+
+        # Mypy (type check)
+        if "mypy" in checks:
+            try:
+                proc = subprocess.run(
+                    f"mypy {file_path} --ignore-missing-imports",
+                    shell=True, capture_output=True, text=True, timeout=10
+                )
+                if proc.returncode == 0:
+                    results.append("✓ Mypy: Típusok OK")
+                else:
+                    results.append(f"📝 Mypy hibák:\n{proc.stdout[:300]}")
+            except:
+                results.append("⚠ Mypy: Nem telepítve (pip install mypy)")
+
+        return "\n".join(results) if results else "[INFO] Nincs ellenőrzés futtatva"
+    except Exception as exc:
+        return f"[QUALITY_ERROR] {exc}"
+
+
+def _run_tests(path: str, framework: str = "auto") -> str:
+    """Detect and run tests (pytest, unittest)."""
+    try:
+        file_path = pathlib.Path(os.path.expanduser(path)).resolve()
+
+        # If file, look for test in same dir
+        if file_path.is_file():
+            test_dir = file_path.parent
+            test_file = file_path.with_name(f"test_{file_path.stem}.py")
+        else:
+            test_dir = file_path
+            test_file = test_dir / "test_*.py"
+
+        results = []
+
+        # Try pytest first
+        if framework in ["auto", "pytest"]:
+            try:
+                proc = subprocess.run(
+                    f"pytest {test_dir} -v --tb=short",
+                    shell=True, capture_output=True, text=True, timeout=30
+                )
+                if "passed" in proc.stdout or "PASSED" in proc.stdout:
+                    results.append(f"✅ Pytest:\n{proc.stdout[:500]}")
+                elif proc.returncode != 0:
+                    results.append(f"❌ Pytest hibák:\n{proc.stdout[:500]}")
+                return "\n".join(results) if results else "[INFO] Pytest nincs telepítve"
+            except:
+                pass
+
+        # Try unittest
+        if framework in ["auto", "unittest"]:
+            try:
+                proc = subprocess.run(
+                    f"python3 -m unittest discover -s {test_dir} -p 'test*.py' -v",
+                    shell=True, capture_output=True, text=True, timeout=30
+                )
+                if "OK" in proc.stdout:
+                    results.append(f"✅ Unittest:\n{proc.stdout[:500]}")
+                else:
+                    results.append(f"❌ Unittest:\n{proc.stdout[:500]}")
+                return "\n".join(results)
+            except:
+                pass
+
+        return "[INFO] Nincs teszt fájl vagy nincs telepítve pytest/unittest"
+    except Exception as exc:
+        return f"[TEST_ERROR] {exc}"
+
+
+def _suggest_fixes(error_msg: str, code_snippet: str = "") -> str:
+    """Suggest fixes based on error message (heuristic based)."""
+    suggestions = []
+
+    # Common Python errors
+    error_lower = error_msg.lower()
+
+    if "zerodivisionerror" in error_lower:
+        suggestions.append("🔧 ZeroDivisionError: Ellenőrizz hogy a nevező nem 0\nJavítás: if denominator != 0:")
+
+    if "typeerror" in error_lower or "type error" in error_lower:
+        suggestions.append("🔧 TypeError: Típus mismatch\nJavítás: Adj hozzá type hints-eket az argumentumokhoz")
+
+    if "attributeerror" in error_lower:
+        suggestions.append("🔧 AttributeError: Attribútum nem létezik\nJavítás: Ellenőrizd az objektum típusát és metódusnevét")
+
+    if "indentationerror" in error_lower:
+        suggestions.append("🔧 IndentationError: Szóköz/tab hiba\nJavítás: Konzisztens behúzást használj (spaces vagy tabs)")
+
+    if "modulenotfounderror" in error_lower or "import" in error_lower:
+        suggestions.append("🔧 ImportError: Modul nem található\nJavítás: pip install <modul_név>")
+
+    if "keyerror" in error_lower:
+        suggestions.append("🔧 KeyError: Dict kulcs nem létezik\nJavítás: if key in dict: vagy dict.get(key)")
+
+    if "indexerror" in error_lower:
+        suggestions.append("🔧 IndexError: Lista index out of range\nJavítás: Ellenőrizd a lista hosszát: len(list)")
+
+    if "recursion" in error_lower:
+        suggestions.append("🔧 RecursionError: Túl mély rekurzió\nJavítás: Iteratív megoldást használj vagy növeld sys.setrecursionlimit()")
+
+    if not suggestions:
+        suggestions.append(f"⚠️ Ismeretlen hiba: {error_msg[:100]}\nJavaslat: Add hozzá a hibakód kimenetet a context-hez")
+
+    if code_snippet:
+        suggestions.append(f"\n📝 Kód kontextus:\n{code_snippet[:200]}")
+
+    return "\n".join(suggestions)
+
+
+# ── Built-in command helpers ───────────────────────────────────────
 def list_directory(path: str) -> str:
     """ls: – list contents restricted to FRANZ_DIR."""
     real = safe_path(path or ".")

@@ -77,14 +77,17 @@ _CODE_KEYWORDS = [
 
 _THINK_KEYWORDS = [
     "miért",
-    "hogyan működik",
+    "hogyan",
     "magyarázd",
     "explain",
     "analyze",
     "architektúra",
     "miért van",
-    "milyen a",
-    "hogy működik",
+    "milyen",
+    "mit jelent",
+    "mi a",
+    "megmagyarázza",
+    "értelmezd",
 ]
 
 _FAST_KEYWORDS = [
@@ -101,10 +104,11 @@ _FAST_KEYWORDS = [
 
 
 def _is_agentic(text: str) -> bool:
-    """Ellenőrzés: van-e >= 2 agentic kulcsszó?"""
+    """Ellenőrzés: van-e >= 1 agentic kulcsszó + indikátor."""
     t = text.lower()
     count = sum(1 for kw in _AGENTIC_KEYWORDS if kw in t)
-    return count >= 2
+    # >= 1 agentic keyword már elég, ha nem csak chat-szerű
+    return count >= 1
 
 
 def classify(text: str) -> TaskType:
@@ -131,15 +135,15 @@ def classify(text: str) -> TaskType:
     # Fast metric
     fast_hits = sum(1 for kw in _FAST_KEYWORDS if kw in t)
 
-    # 1. Agentic
-    if agentic_hits >= 2:
+    # 1. Agentic (>= 1 keyword enough if clear action intent)
+    if agentic_hits >= 1:
         # High confidence if clear multi-step language
-        confidence = min(0.95, 0.6 + (agentic_hits - 2) * 0.1)
+        confidence = min(0.95, 0.65 + (agentic_hits - 1) * 0.1)
         return TaskType("agentic", True, "code", confidence=confidence)
 
-    # 2. Think
-    if think_hits >= 2:
-        confidence = 0.8 + (think_hits - 2) * 0.05
+    # 2. Think (>= 1 keyword enough)
+    if think_hits >= 1:
+        confidence = 0.75 + (think_hits - 1) * 0.05
         return TaskType("think", False, "research", confidence=min(confidence, 1.0))
 
     # 3. Code

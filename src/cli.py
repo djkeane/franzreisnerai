@@ -45,6 +45,8 @@ from src.memory import (
 from src.learn import bake, context_for, fetch_url, forget, learn, list_knowledge, mark_core
 from src.router import natural_to_command
 from src.security import FRANZ_DIR, log_event
+from src.classifier import classify  # Phase A: agentic task detection
+from src.tools import AGENT_TOOLS  # Phase A: tool registry
 from src.workflows.code_improve import coding_loop, generate_project
 from src.workflows.auto_learn import auto_learn
 from src.workflows.autonomous import get_autonomous
@@ -243,7 +245,34 @@ def build_system_prompt(topic: str, query: str = "") -> str:
     return base
 
 
+def build_agent_system_prompt(topic: str, query: str = "") -> str:
+    """
+    Build system prompt for agentic task (Phase A.1).
+    Includes tool registry and agentic mode instructions.
+    """
+    base = build_system_prompt(topic, query)
+    tools_block = "\n".join(f"  - {k}: {v}" for k, v in AGENT_TOOLS.items())
+    return (
+        base
+        + "\n\n## Agentic Mód — Eszközök\n"
+        + "Tool-hívás formátuma:\n```tool\n{\"tool\": \"...\", \"args\": {...}, \"reason\": \"...\"}\n```\n\n"
+        + f"Elérhető eszközök:\n{tools_block}\n\n"
+        + "Szabályok:\n"
+        + "1. Lépésről lépésre haladj, minden lépésnél egy tool-t hívj.\n"
+        + "2. Ha befejezted, MINDIG hívd meg a `task_done` eszközt.\n"
+        + "3. Soha ne generálj szöveget a ```tool blokkon kívül, ha éppen toolokat használsz.\n"
+    )
+
+
 # ── Agent loop ─────────────────────────────────────────────────
+
+def _log_agent_session(query: str, steps: int, tools_used: list, success: bool = True, summary: str = "") -> None:
+    """Phase A: Agent session logging helper."""
+    log_event(
+        "AGENT_SESSION",
+        f"steps={steps}, tools={len(tools_used)}, success={success}, query={query[:60]}…"
+    )
+
 
 def agent_loop(
     messages: List[Dict],
@@ -252,11 +281,18 @@ def agent_loop(
     stream: bool = STREAM_OUTPUT,
 ) -> str:
     """
-    Streaming + tool-call agent hurok, max MAX_TOOL_STEPS iteráció.
-    Visszaadja az utolsó teljes szöveges választ.
+    Streaming + tool-call agent hurok, max MAX_TOOL_STEPS iteráció (Phase A.2–A.5).
+    - task_done sentinel support
+    - JSON parse error recovery (max 3 retries per step)
+    - Max-step summary fallback
+    - Agent session logging
     """
     step = 0
     final_text = ""
+    original_query = messages[-1].get("content", "")[:200] if messages else ""
+    all_tool_names: list[str] = []
+    parse_retries = 0
+    MAX_PARSE_RETRIES = 3
 
     while step < MAX_TOOL_STEPS:
         step += 1
@@ -301,6 +337,19 @@ def agent_loop(
         final_text = strip_tool_blocks(full)
         tool_calls = parser.tool_calls if stream else parse_tool_calls(full)  # type: ignore[possibly-undefined]
 
+        # Phase A.3: JSON parse error recovery
+        if parser.had_parse_error and parse_retries < MAX_PARSE_RETRIES:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "[PARSE_ERROR] Az előző tool-hívás érvénytelen JSON volt. "
+                    "Formátum: ```tool\n{\"tool\": \"...\", \"args\": {...}}\n```"
+                )
+            })
+            parser.had_parse_error = False
+            parse_retries += 1
+            continue
+
         if not tool_calls:
             break
 
@@ -310,6 +359,7 @@ def agent_loop(
             name = tc.get("tool", tc.get("name", ""))
             args = tc.get("args", tc.get("arguments", {}))
             log_event("TOOL_CALL", f"{name}({args})")
+            all_tool_names.append(name)
 
             # Megerősítés kérése bash tool-ra ha confirm_bash = true
             if name == "bash" and _CONFIRM_BASH:
@@ -326,9 +376,28 @@ def agent_loop(
                     continue
 
             result = tools_exec_fn(name, args)
+
+            # Phase A.2: task_done sentinel handling
+            if isinstance(result, str) and result.startswith("__TASK_DONE__:"):
+                summary = result[len("__TASK_DONE__:"):]
+                print(f"\n\033[92m✓ KÉSZ: {summary}\033[0m\n")
+                _log_agent_session(original_query, step, all_tool_names, success=True, summary=summary)
+                return final_text + f"\n\n{summary}"
+
             tool_msg = f"[Tool: {name}]\n{result}"
             print(f"\033[33m{tool_msg}\033[0m")
             messages.append({"role": "user", "content": tool_msg})
+
+    # Phase A.5: Max step reached — request summary
+    if step >= MAX_TOOL_STEPS:
+        log_event("AGENT_STEP_LIMIT", f"max {MAX_TOOL_STEPS} lépés elérve")
+        messages.append({
+            "role": "user",
+            "content": "[RENDSZER] Elérted a maximális lépéskorlátot. Foglalja össze röviden mi lett kész és mi maradt."
+        })
+        summary = get_answer(messages)
+        print(f"\033[33m[ÖSSZEFOGLALÓ] {summary}\033[0m")
+        _log_agent_session(original_query, step, all_tool_names, success=False, summary=summary)
 
     return final_text
 

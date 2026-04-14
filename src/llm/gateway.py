@@ -20,6 +20,7 @@ from src.llm.gemini import GeminiClient
 from src.llm.groq_client import GroqClient
 from src.llm.openrouter import OpenRouterClient
 from src.security import log_event
+from src.reasoning.chain_of_thought import enhance_prompt_with_reasoning
 
 # Napi token számláló (memóriában — újraindításkor reset)
 _daily_tokens: dict[str, int] = {"total": 0, "date": ""}

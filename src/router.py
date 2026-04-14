@@ -83,7 +83,7 @@ _SERVERS_RE = re.compile(
 )
 
 _CODE_GEN_RE = re.compile(
-    r"^(írj|generálj|csináld\s+meg|kódolj|fejlessz|tudsz\s+valamit\s+késziteni|készíts\s+valamit)",
+    r"^(írj|generálj|csináld\s+meg|kódolj|fejlessz|tudsz\s+valamit\s+késziteni|készíts\s+valamit|készítsd\s+el|csinálj|létrehozz)",
     re.IGNORECASE,
 )
 
@@ -199,9 +199,9 @@ def natural_to_command(user_input: str) -> str | None:
     # ── Általános workflow parancsok (alacsonyabb prioritás) ────────
 
     # Szerver/port lekérdezések (nagyobb prioritás mint /dir)
-    # "nézd meg milyen szerverek futnak", "milyen portok vannak nyitva", stb.
+    # "nézd meg milyen szerverek futnak", "milyen portok vannak nyitva", "nézd át a szervereket", stb.
     if _SERVERS_RE.search(s):
-        if re.search(r"^(nézd\s+meg|mutasd|milyen|mik\s+a|mik\s+az|futó|aktív|ellenőrizd)", s, re.IGNORECASE):
+        if re.search(r"^(nézd\s+(meg|át)|mutasd|milyen|mik\s+a|mik\s+az|futó|aktív|ellenőrizd)", s, re.IGNORECASE):
             return "/servers"
 
     if _DIR_RE.match(s):

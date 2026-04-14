@@ -68,7 +68,7 @@ class LLMGateway:
         last_msg = messages[-1].get("content", "").lower()
         combined_context = " ".join([m.get("content", "").lower() for m in messages[-3:]])
 
-        # Kiterjesztett kódolás kulcsszavak (verifikáció, tesztelés nélkül)
+        # Kiterjesztett kódolás kulcsszavak
         code_keywords = [
             "python", "javascript", "typescript", "rust", "go", "java", "c++", "c#",
             "kód ", " kód", "függvény", "class ", "class:", "api ", "script", "refaktor",
@@ -77,8 +77,9 @@ class LLMGateway:
         ]
         # Kutatás/Elemzés
         research_keywords = [
-            "keress", "research", "browse", "github", "reddit", "elemzés", "audit",
-            "dokumentáció", "összehasonlít", "analiz", "tanulmány", "cikk", "forrás"
+            "keress", "research", "browse", "github", "reddit", "elemzés",
+            "dokumentáció", "összehasonlít", "analiz", "tanulmány", "cikk", "forrás",
+            "hogyan működik", "miért", "magyarázd el", "explain", "milyen"
         ]
         # Tervezés/Architektúra
         planner_keywords = [
@@ -88,21 +89,40 @@ class LLMGateway:
         # Ellenőrzés/Verifikáció
         verifier_keywords = [
             "tesztelj", "ellenőrizd", "működik", "verify", "check", "hiba?", "audit",
-            "tesztel", "unit test", "validiráció", "működésképes"
+            "tesztel", "unit test", "validiráció", "működésképes", "van-e hiba"
+        ]
+        # Agentic: многов-операции + cselekvés igék (strict: majd/aztán + 2+ actions)
+        agentic_keywords = [
+            "majd", "aztán", "ezután", "végül", "után", "utána", "közben",
+            "lépésről lépésre", "step by step", "workflow"
         ]
 
         # Pontozás per kategória
         score = {
+            "agentic": sum(1 for kw in agentic_keywords if kw in last_msg),
             "verifier": sum(1 for kw in verifier_keywords if kw in last_msg),
             "planner": sum(1 for kw in planner_keywords if kw in last_msg),
             "code": sum(1 for kw in code_keywords if kw in last_msg),
             "research": sum(1 for kw in research_keywords if kw in last_msg),
         }
 
-        # Legmagasabb pontszám nyer
-        best_match = max(score.items(), key=lambda x: x[1])
-        if best_match[1] >= 2:
-            return best_match[0]
+        # Prioritás: agentic > research > code > verifier > planner
+        # Research: előbb, mint code (megkülönböztet analitikai kérdéseket)
+        # Verifier csak ha explicit "tesztel/ellenőrizd" + nem research
+        priority_order = ["agentic", "research", "code", "verifier", "planner"]
+        for category in priority_order:
+            if score[category] >= 1:
+                # Research: ha "magyarázd" vagy "miért" → research, nem verifier
+                if category == "research" and score["verifier"] > 0:
+                    if "magyarázd" in last_msg or "miért" in last_msg or "hogyan" in last_msg:
+                        return "research"
+                if category == "verifier" and score["research"] > 0:
+                    # Verifier csak ha explicit ellenőrzési kérés
+                    if any(kw in last_msg for kw in ["ellenőrizd", "tesztel", "van-e hiba", "audit"]):
+                        return "verifier"
+                    else:
+                        continue  # Skip verifier, legyen research
+                return category
 
         # Magyar nyelv detektálás — fallback
         hu_chars = "áéíóöőúüű"

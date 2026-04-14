@@ -161,23 +161,9 @@ def natural_to_command(user_input: str) -> str | None:
 
     # ── Workflow parancsok ──────────────────────────────────────
 
-    # Szerver/port lekérdezések (nagyobb prioritás mint /dir)
-    # "nézd meg milyen szerverek futnak", "milyen portok vannak nyitva", stb.
-    if _SERVERS_RE.search(s):
-        if re.search(r"^(nézd\s+meg|mutasd|milyen|mik\s+a|mik\s+az|futó|aktív|ellenőrizd)", s, re.IGNORECASE):
-            return "/servers"
+    # Claude Code-szerű parancsok (magasabb prioritás!)
+    # Ezek specifikusabbak, ezért előbb kell őket ellenőrizni
 
-    if _DIR_RE.match(s):
-        return "/dir"
-
-    if _CODE_GEN_RE.match(s):
-        # "írj egy fib függvényt" → "/kod írj egy fib függvényt"
-        return f"/kod {s}"
-
-    if _LOOP_RE.match(s):
-        return "/loop"
-
-    # ── Claude Code-szerű parancsok ──────────────────────────────
     # Git: "mi változott" → "/git status"
     if _GIT_RE.match(s):
         if re.search(r"(mi\s+változott|git\s+állapot|nézd)", s, re.IGNORECASE):
@@ -194,6 +180,7 @@ def natural_to_command(user_input: str) -> str | None:
         return f"/keresés {pattern}" if pattern else None
 
     # Kód review: "nézd át az auth.py-t" → "/review auth.py"
+    # Előbb ellenőrizzük a fájl megléétét, mert speci­fikabb
     if _REVIEW_RE.match(s):
         file_match = re.search(r"([\w/\-_.]+(?:\.py|\.ts|\.js|\.go|\.java))", s)
         if file_match:
@@ -208,6 +195,24 @@ def natural_to_command(user_input: str) -> str | None:
     # Tesztelés: "futtasd a teszteket" → "/teszt"
     if _TEST_RE.match(s):
         return "/teszt"
+
+    # ── Általános workflow parancsok (alacsonyabb prioritás) ────────
+
+    # Szerver/port lekérdezések (nagyobb prioritás mint /dir)
+    # "nézd meg milyen szerverek futnak", "milyen portok vannak nyitva", stb.
+    if _SERVERS_RE.search(s):
+        if re.search(r"^(nézd\s+meg|mutasd|milyen|mik\s+a|mik\s+az|futó|aktív|ellenőrizd)", s, re.IGNORECASE):
+            return "/servers"
+
+    if _DIR_RE.match(s):
+        return "/dir"
+
+    if _CODE_GEN_RE.match(s):
+        # "írj egy fib függvényt" → "/kod írj egy fib függvényt"
+        return f"/kod {s}"
+
+    if _LOOP_RE.match(s):
+        return "/loop"
 
     return None
 

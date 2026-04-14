@@ -395,3 +395,410 @@ def running_services() -> str:
     except Exception as exc:
         log_event("RUNNING_SERVICES_ERROR", str(exc))
         return f"[ERROR] running_services: {exc}"
+
+
+# ── Fájlrendszer műveletek (Phase A) ────────────────────────────
+def search_files(pattern: str, path: str = ".", max_results: int = 50) -> str:
+    """
+    Search for files by name using glob patterns.
+    Examples: "*.py", "src/**/*.ts", "**/*test*"
+    """
+    try:
+        real_path = safe_path(path) or path
+        matches = glob.glob(
+            pattern,
+            root_dir=real_path,
+            recursive=True,
+        )
+
+        if not matches:
+            return "(Nincs találat)"
+
+        lines = ["Fájl  │ Méret"]
+        lines.append("──────────────────────")
+
+        for i, match in enumerate(sorted(matches)[:max_results]):
+            full_path = os.path.join(real_path, match)
+            try:
+                size = os.path.getsize(full_path)
+                size_str = f"{size:,}" if size < 1_000_000 else f"{size/1_000_000:.1f}M"
+            except Exception:
+                size_str = "?"
+            lines.append(f"{match:40} │ {size_str:>10}")
+
+        if len(matches) > max_results:
+            lines.append(f"\n… és még {len(matches) - max_results} fájl")
+
+        return "\n".join(lines)
+    except Exception as exc:
+        log_event("SEARCH_FILES_ERROR", str(exc))
+        return f"[ERROR] search_files: {exc}"
+
+
+def grep_in_files(
+    pattern: str, path: str = ".", extensions: list[str] = None, max_results: int = 20
+) -> str:
+    """
+    Search for text content in files using regex.
+    Extensions: [".py", ".ts"] or None for all files.
+    Returns: file:line:content format
+    """
+    try:
+        real_path = safe_path(path) or path
+        regex = re.compile(pattern, re.IGNORECASE)
+
+        matches = []
+        for root, _, files in os.walk(real_path):
+            for fname in files:
+                if extensions and not any(fname.endswith(ext) for ext in extensions):
+                    continue
+
+                full_path = os.path.join(root, fname)
+                try:
+                    with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for line_num, line in enumerate(f, 1):
+                            if regex.search(line):
+                                rel_path = os.path.relpath(full_path, real_path)
+                                content = line.strip()[:80]
+                                matches.append(f"{rel_path}:{line_num}: {content}")
+                                if len(matches) >= max_results:
+                                    break
+                    if len(matches) >= max_results:
+                        break
+                except Exception:
+                    pass
+
+        if not matches:
+            return "(Nincs találat)"
+
+        lines = ["Fájl:sor: Tartalom"]
+        lines.append("─" * 70)
+        lines.extend(matches[:max_results])
+
+        if len(matches) > max_results:
+            lines.append(f"\n… és még {len(matches) - max_results} találat")
+
+        return "\n".join(lines)
+    except Exception as exc:
+        log_event("GREP_ERROR", str(exc))
+        return f"[ERROR] grep_in_files: {exc}"
+
+
+def edit_file_lines(path: str, start_line: int, end_line: int, new_content: str) -> str:
+    """
+    Edit specific lines in a file (1-based indexing).
+    Replaces lines [start_line, end_line] with new_content.
+    """
+    try:
+        real_path = safe_path(path)
+        if not real_path or not os.path.isfile(real_path):
+            return f"[ERROR] Fájl nem elérhető: {path}"
+
+        with open(real_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        # Validate line numbers (1-based)
+        if start_line < 1 or end_line > len(lines) or start_line > end_line:
+            return f"[ERROR] Érvénytelen sor-tartomány (van {len(lines)} sor)"
+
+        # Replace lines (convert to 0-based)
+        new_lines = lines[: start_line - 1] + [new_content + "\n"] + lines[end_line:]
+
+        with open(real_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
+        log_event("EDIT_FILE", f"{path}:{start_line}-{end_line}")
+        return f"OK: {path} {start_line}–{end_line} módosítva"
+    except Exception as exc:
+        log_event("EDIT_FILE_ERROR", str(exc))
+        return f"[ERROR] edit_file_lines: {exc}"
+
+
+# ── Git integráció (Phase B) ────────────────────────────────────
+def git_status(cwd: str = ".") -> str:
+    """Show git status with short format."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--short", "--branch"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        output = result.stdout.strip()
+        return output if output else "(clean)"
+    except Exception as exc:
+        return f"[ERROR] git_status: {exc}"
+
+
+def git_diff(path: str = None, cwd: str = ".") -> str:
+    """Show git diff for a file or all changes."""
+    try:
+        cmd = ["git", "diff"]
+        if path:
+            cmd.append(path)
+
+        result = subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        output = result.stdout
+        lines = output.split("\n")
+        if len(lines) > 200:
+            return "\n".join(lines[:100]) + f"\n\n… [truncated, total {len(lines)} lines]"
+        return output.strip() or "(no changes)"
+    except Exception as exc:
+        return f"[ERROR] git_diff: {exc}"
+
+
+def git_commit(message: str, cwd: str = ".") -> str:
+    """Commit all staged changes."""
+    try:
+        # Add all changes first
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=cwd,
+            capture_output=True,
+            timeout=10,
+        )
+
+        # Commit
+        result = subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode == 0:
+            log_event("GIT_COMMIT", message[:50])
+            return result.stdout.strip()
+        else:
+            return result.stderr.strip() or "Nincs mit commitolni"
+    except Exception as exc:
+        return f"[ERROR] git_commit: {exc}"
+
+
+def git_log(n: int = 10, cwd: str = ".") -> str:
+    """Show git log (last n commits)."""
+    try:
+        result = subprocess.run(
+            ["git", "log", "--oneline", f"-n{n}"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.stdout.strip() or "(empty)"
+    except Exception as exc:
+        return f"[ERROR] git_log: {exc}"
+
+
+# ── Kód review és magyarázat (Phase C) ──────────────────────────
+def review_file(path: str) -> str:
+    """
+    Request LLM code review for a file.
+    Checks for: errors, security issues, improvements.
+    """
+    try:
+        real_path = safe_path(path)
+        if not real_path or not os.path.isfile(real_path):
+            return f"[ERROR] Fájl nem elérhető: {path}"
+
+        with open(real_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        lines = content.split("\n")
+        if len(lines) > 300:
+            content = "\n".join(lines[:300]) + f"\n\n… [truncated, total {len(lines)} lines]"
+
+        # Import here to avoid circular dependency
+        from src.llm import get_answer
+
+        messages = [
+            {
+                "role": "user",
+                "content": f"""Nézd át ezt a kódot és jelezd:
+1. Hibák vagy problémák
+2. Biztonsági problémák
+3. Javítási javaslatok
+
+Fájl: {path}
+
+```
+{content}
+```""",
+            }
+        ]
+
+        response = get_answer(messages)
+        log_event("REVIEW_FILE", path)
+        return response
+    except Exception as exc:
+        log_event("REVIEW_FILE_ERROR", str(exc))
+        return f"[ERROR] review_file: {exc}"
+
+
+def explain_code(path: str, start_line: int = None, end_line: int = None) -> str:
+    """Explain code in a file (or specific line range)."""
+    try:
+        real_path = safe_path(path)
+        if not real_path or not os.path.isfile(real_path):
+            return f"[ERROR] Fájl nem elérhető: {path}"
+
+        with open(real_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        # Extract specific lines if requested
+        if start_line and end_line:
+            if start_line < 1 or end_line > len(lines):
+                return f"[ERROR] Érvénytelen sor-tartomány"
+            content = "".join(lines[start_line - 1 : end_line])
+            range_str = f" ({start_line}–{end_line})"
+        else:
+            content = "".join(lines)
+            range_str = ""
+
+        from src.llm import get_answer
+
+        messages = [
+            {
+                "role": "user",
+                "content": f"""Magyarázd el ezt a kódot {range_str}:
+
+Fájl: {path}
+
+```
+{content}
+```""",
+            }
+        ]
+
+        response = get_answer(messages)
+        log_event("EXPLAIN_CODE", path)
+        return response
+    except Exception as exc:
+        log_event("EXPLAIN_CODE_ERROR", str(exc))
+        return f"[ERROR] explain_code: {exc}"
+
+
+def find_bugs(path: str) -> str:
+    """Find potential bugs and security issues in code."""
+    try:
+        real_path = safe_path(path)
+        if not real_path or not os.path.isfile(real_path):
+            return f"[ERROR] Fájl nem elérhető: {path}"
+
+        with open(real_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        lines = content.split("\n")
+        if len(lines) > 300:
+            content = "\n".join(lines[:300])
+
+        from src.llm import get_answer
+
+        messages = [
+            {
+                "role": "user",
+                "content": f"""Keresd meg a hibákat és biztonsági problémákat ebben a kódban:
+
+Fájl: {path}
+
+```
+{content}
+```
+
+Listázd:
+1. Kritikus hibák
+2. Biztonsági problémák
+3. Potenciális runtime hibák""",
+            }
+        ]
+
+        response = get_answer(messages)
+        log_event("FIND_BUGS", path)
+        return response
+    except Exception as exc:
+        log_event("FIND_BUGS_ERROR", str(exc))
+        return f"[ERROR] find_bugs: {exc}"
+
+
+# ── Teszt integráció (Phase D) ─────────────────────────────────
+def run_tests(path: str = ".", test_file: str = None, timeout: int = 60) -> str:
+    """Run pytest tests."""
+    try:
+        target = test_file if test_file else path
+        result = subprocess.run(
+            ["python3", "-m", "pytest", target, "-v", "--tb=short"],
+            cwd=".",
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+        output = (result.stdout + result.stderr).split("\n")
+        if len(output) > 100:
+            output = output[:50] + ["…"] + output[-50:]
+
+        return "\n".join(output)
+    except subprocess.TimeoutExpired:
+        return f"[TIMEOUT] Tesztek túl sokáig futottak ({timeout}s)"
+    except Exception as exc:
+        return f"[ERROR] run_tests: {exc}"
+
+
+def generate_tests(path: str) -> str:
+    """Generate pytest tests for a file using LLM."""
+    try:
+        real_path = safe_path(path)
+        if not real_path or not os.path.isfile(real_path):
+            return f"[ERROR] Fájl nem elérhető: {path}"
+
+        with open(real_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        lines = content.split("\n")
+        if len(lines) > 200:
+            content = "\n".join(lines[:200])
+
+        from src.llm import get_answer
+
+        messages = [
+            {
+                "role": "user",
+                "content": f"""Generálj pytest unit teszteket ehhez a kódhoz:
+
+Fájl: {path}
+
+```python
+{content}
+```
+
+Írj komplett, futtatható pytest tesztkódot. Az output legyen csak Python kód, nincs magyarázat.""",
+            }
+        ]
+
+        response = get_answer(messages)
+
+        # Extract code block if present
+        code_match = re.search(r"```(?:python)?\n(.*?)\n```", response, re.DOTALL)
+        if code_match:
+            test_code = code_match.group(1)
+        else:
+            test_code = response
+
+        # Write test file
+        test_path = real_path.replace(".py", "_test.py")
+        with open(test_path, "w", encoding="utf-8") as f:
+            f.write(test_code)
+
+        log_event("GENERATE_TESTS", f"{path} → {test_path}")
+        return f"OK: Tesztek írva: {test_path}\n\n{test_code[:500]}…"
+    except Exception as exc:
+        log_event("GENERATE_TESTS_ERROR", str(exc))
+        return f"[ERROR] generate_tests: {exc}"

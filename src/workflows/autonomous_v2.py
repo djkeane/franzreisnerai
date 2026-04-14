@@ -15,7 +15,7 @@ import time
 import traceback
 from typing import Any, Dict, List, Optional
 
-from src.llm import get_answer, parse_tool_calls, strip_tool_blocks
+from src.llm import llm_gateway, parse_tool_calls, strip_tool_blocks
 from src.security import log_event
 from src.memory.structured import StructuredKB
 from src.tools import AGENT_TOOLS, exec_tool
@@ -110,7 +110,7 @@ class AutonomousAgent:
             
             try:
                 # 1. GENERÁLÁS (Gondolkodás + Tool választás)
-                response = get_answer(self.history, model=self.model)
+                response = llm_gateway.chat(self.history, task_type="code")
                 if not response:
                     print("\033[91mHiba: Üres válasz az LLM-től.\033[0m")
                     break

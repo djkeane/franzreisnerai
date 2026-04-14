@@ -100,4 +100,5 @@ class GroqClient(BaseLLMClient):
                     yield delta
         except Exception as exc:
             log_event("GROQ_STREAM_ERROR", str(exc))
-            yield f"\n[HIBA] Groq stream megszakadt: {exc}"
+            # Fontos: Ha hiba van az elején, dobjuk tovább hogy a gateway failover-eljen
+            raise exc

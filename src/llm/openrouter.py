@@ -129,4 +129,5 @@ class OpenRouterClient(BaseLLMClient):
                             continue
         except Exception as exc:
             log_event("OPENROUTER_STREAM_ERROR", str(exc))
-            yield f"\n[HIBA] OpenRouter stream megszakadt: {exc}"
+            # Fontos: Ha még nem jött semmi, dobjunk hibát hogy a gateway át tudjon ugrani máshova
+            raise exc

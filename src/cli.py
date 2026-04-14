@@ -43,6 +43,7 @@ from src.memory import (
     truncate_history,
 )
 from src.learn import bake, context_for, fetch_url, forget, learn, list_knowledge, mark_core
+from src.router import natural_to_command
 from src.security import FRANZ_DIR, log_event
 from src.tools import (
     cat_file,
@@ -647,6 +648,11 @@ def main() -> None:
         stripped = user_input.strip()
         if not stripped:
             continue
+
+        # ── Természetes nyelvű parancs-felismerés ───────────────
+        cmd = natural_to_command(stripped)
+        if cmd:
+            stripped = cmd
 
         # ── Meta-parancsok ──────────────────────────────────────
         if stripped in ("/exit", "/quit"):

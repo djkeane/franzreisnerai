@@ -37,7 +37,68 @@ _CODE_PATTERNS = re.compile(
 
 # Modellek a configból
 _CODE_MODEL = cfg.get("CodeAgent", "model", fallback="qwen2.5-coder:7b")
-_LANG_MODEL = cfg.get("ollama", "default_model", fallback="franz-coder:latest")
+# Nyelvi kérdésekhez erősebb modell — jarvis-hu-coder ha elérhető, különben qwen2.5-coder:7b
+_LANG_MODEL = cfg.get("ollama", "lang_model",
+                       fallback=cfg.get("DeveloperAgent", "model",
+                                        fallback="jarvis-hu-coder:latest"))
+
+# ── Természetes nyelvű tanulási minták ───────────────────────
+_LEARN_RE = re.compile(
+    r"""
+    ^(
+      tanulj(\s+meg)?|
+      tanuld\s+meg|
+      jegyezd\s+meg|
+      tárold\s+el|
+      memoriz[aá]ld
+    )\s+
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+_FORGET_RE = re.compile(
+    r"^(felejtsd\s+(el)?|töröld\s+(ki)?|felejts\s+el)\s+",
+    re.IGNORECASE,
+)
+
+_EVOLVE_RE = re.compile(
+    r"^(fejl[oő]d(j)?|fejlesszd\s+magad|tanultakat\s+beépít)",
+    re.IGNORECASE,
+)
+
+_LIST_RE = re.compile(
+    r"^(mit\s+tudsz|mit\s+tanultál|tudásod|tudáslist[aá])",
+    re.IGNORECASE,
+)
+
+
+def natural_to_command(user_input: str) -> str | None:
+    """
+    Természetes nyelvű tanulási kérést slash-paranccá alakít.
+    Visszaadja az átírást, vagy None-t ha nem tanulási kérés.
+
+    Pl.: 'tanulj meg valamit' → '/tanul valamit'
+         'felejtsd el az IP-t' → '/felejtsd az IP-t'
+         'fejlődj' → '/fejlodj'
+    """
+    s = user_input.strip()
+
+    m = _LEARN_RE.match(s)
+    if m:
+        rest = s[m.end():].strip()
+        return f"/tanul {rest}" if rest else None
+
+    if _FORGET_RE.match(s):
+        rest = _FORGET_RE.sub("", s).strip()
+        return f"/felejtsd {rest}" if rest else None
+
+    if _EVOLVE_RE.match(s):
+        return "/fejlodj"
+
+    if _LIST_RE.match(s):
+        return "/tudom"
+
+    return None
 
 
 def route(user_input: str) -> Tuple[str, str]:

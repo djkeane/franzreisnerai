@@ -52,14 +52,26 @@ from src.tools import (
     cat_file,
     disk_usage,
     docker_cmd,
+    edit_file_lines,
     exec_shell_safe,
     exec_tool,
+    explain_code,
+    find_bugs,
+    generate_tests,
+    git_commit,
+    git_diff,
+    git_log,
+    git_status,
+    grep_in_files,
     kubectl_cmd,
     list_directory,
     listening_ports,
     network_info,
     process_list,
+    review_file,
+    run_tests,
     running_services,
+    search_files,
     system_status,
 )
 
@@ -366,6 +378,26 @@ def _print_help() -> None:
   kubectl:<args>      kubectl parancs
   run:<cmd>           Shell parancs (whitelist-en szereplők)
 
+\033[1mFájlrendszer & keresés:\033[0m
+  /keresés <minta>    Fájlkeresés glob minta alapján (pl. "*.py", "src/**/*.ts")
+  /grep <minta>       Szöveges keresés fájlokban (regex)
+  /szerk <f> <s-e> <t> Sor-szintű szerkesztés (start-end sor, tartalom)
+
+\033[1mGit integráció:\033[0m
+  /git status         Git állapot
+  /git diff [fájl]    Git diff (összes vagy adott fájl)
+  /git commit "<msg>" Commit a megadott üzenettel
+  /git log [n]        Utolsó n commit
+
+\033[1mKód analízis (LLM-alapú):\033[0m
+  /review <fájl>      Kód review (hibák, biztonsági problémák, javaslatok)
+  /magyaráz <fájl>    Kód magyarázata
+  /hibák <fájl>       Potenciális hibák és biztonsági problémák keresése
+
+\033[1mTesztelés:\033[0m
+  /teszt [fájl]       Pytest futtatása
+  /teszt-generál <f>  Unit tesztek generálása LLM-mel
+
 \033[1mTanulás / önfejlesztés:\033[0m
   /tanul <szöveg>         Tény megtanulása (embedding + tárolás)
   /tanul url:<url>        URL tartalmának megtanulása
@@ -403,6 +435,104 @@ def handle_tool_commands(user_input: str) -> bool:
 
     if stripped == "/ports":
         print(listening_ports())
+        return True
+
+    # ── Fájlrendszer parancsok (Phase A) ────────────────────────
+    if stripped.startswith("/keresés "):
+        pattern = stripped[9:].strip()
+        print(search_files(pattern))
+        return True
+
+    if stripped.startswith("/grep "):
+        args = stripped[6:].strip()
+        # Parse: /grep <pattern> [--ext .py,.ts]
+        parts = args.split(" --ext ")
+        pattern = parts[0]
+        extensions = None
+        if len(parts) > 1:
+            extensions = [ext.strip() for ext in parts[1].split(",")]
+        print(grep_in_files(pattern, extensions=extensions))
+        return True
+
+    if stripped.startswith("/szerk "):
+        # /szerk <fájl> <start>-<end> <tartalom>
+        args = stripped[7:].strip()
+        parts = args.split(None, 2)
+        if len(parts) >= 3:
+            file_path = parts[0]
+            range_str = parts[1]
+            content = parts[2]
+            try:
+                start, end = map(int, range_str.split("-"))
+                print(edit_file_lines(file_path, start, end, content))
+            except ValueError:
+                print("[ERROR] Formátum: /szerk <fájl> <start>-<end> <tartalom>")
+        else:
+            print("[ERROR] Formátum: /szerk <fájl> <start>-<end> <tartalom>")
+        return True
+
+    # ── Git parancsok (Phase B) ────────────────────────────────
+    if stripped == "/git status":
+        print(git_status())
+        return True
+
+    if stripped.startswith("/git diff"):
+        path = stripped[9:].strip() if len(stripped) > 9 else None
+        print(git_diff(path))
+        return True
+
+    if stripped.startswith("/git commit "):
+        message = stripped[12:].strip()
+        print(git_commit(message))
+        return True
+
+    if stripped.startswith("/git log"):
+        n_str = stripped[8:].strip()
+        n = int(n_str) if n_str.isdigit() else 10
+        print(git_log(n))
+        return True
+
+    # ── Kód review parancsok (Phase C) ──────────────────────────
+    if stripped.startswith("/review "):
+        file_path = stripped[8:].strip()
+        print(f"\n🔍 Kód review: {file_path}\n")
+        print(review_file(file_path))
+        return True
+
+    if stripped.startswith("/magyaráz "):
+        args = stripped[10:].strip()
+        parts = args.split()
+        if not parts:
+            print("[ERROR] Használat: /magyaráz <fájl> [start-end]")
+            return True
+        file_path = parts[0]
+        start_line, end_line = None, None
+        if len(parts) > 1:
+            try:
+                start_line, end_line = map(int, parts[1].split("-"))
+            except ValueError:
+                pass
+        print(f"\n📖 Kód magyarázat: {file_path}\n")
+        print(explain_code(file_path, start_line, end_line))
+        return True
+
+    if stripped.startswith("/hibák "):
+        file_path = stripped[7:].strip()
+        print(f"\n🐛 Hibakerés: {file_path}\n")
+        print(find_bugs(file_path))
+        return True
+
+    # ── Teszt parancsok (Phase D) ──────────────────────────────
+    if stripped == "/teszt" or stripped.startswith("/teszt "):
+        test_file = stripped[7:].strip() if len(stripped) > 7 else None
+        print(f"\n✅ Tesztek futtatása {test_file or '(alapkönyvtár)'}\n")
+        print(run_tests(test_file=test_file))
+        return True
+
+    if stripped.startswith("/teszt-generál "):
+        file_path = stripped[15:].strip()
+        print(f"\n✍️  Tesztgenerálás: {file_path}\n")
+        print(generate_tests(file_path))
         return True
 
     if stripped.startswith("ls:"):

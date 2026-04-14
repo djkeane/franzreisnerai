@@ -45,6 +45,9 @@ from src.memory import (
 from src.learn import bake, context_for, fetch_url, forget, learn, list_knowledge, mark_core
 from src.router import natural_to_command
 from src.security import FRANZ_DIR, log_event
+from src.workflows.code_improve import coding_loop, generate_project
+from src.workflows.auto_learn import auto_learn
+from src.workflows.autonomous import get_autonomous
 from src.tools import (
     cat_file,
     disk_usage,

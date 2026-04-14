@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "franz"
-version = "5.0.0"
+version = "6.0.0"
 description = "Franz – Offline-first, Agentic Terminal AI by DömösAiTech 2026"
 readme = "README.md"
 license = { text = "MIT" }
@@ -14,10 +14,16 @@ dependencies = [
     "psutil>=5.9",
     "rich>=13.0",
     "google-generativeai>=0.5",
+    "groq>=0.9",
+    "mcp>=1.27",
+    "beautifulsoup4>=4.12",
+    "pyflakes>=3.0",
 ]
 
 [project.optional-dependencies]
 claude = ["anthropic>=0.25"]
+chromadb = ["chromadb>=0.5"]
+playwright = ["playwright>=1.40"]
 dev = [
     "pytest>=7.4",
     "ruff>=0.4",

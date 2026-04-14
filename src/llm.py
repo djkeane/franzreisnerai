@@ -27,7 +27,8 @@ OLLAMA_URLS: List[str] = [
     for u in cfg.get("ollama", "url", fallback="http://localhost:11434").split(",")
     if u.strip()
 ]
-OLLAMA_TIMEOUT = cfg.getint("ollama", "timeout", fallback=60)
+OLLAMA_TIMEOUT = cfg.getint("ollama", "timeout", fallback=120)
+FIRST_TOKEN_TIMEOUT = cfg.getint("ollama", "first_token_timeout", fallback=60)
 DEFAULT_MODEL = cfg.get("ollama", "default_model", fallback="jarvis-hu-coder:latest")
 FALLBACK_MODELS: List[str] = [
     m.strip()
@@ -114,6 +115,34 @@ def strip_tool_blocks(text: str) -> str:
     return re.sub(r"```tool\s*\n.*?\n```\s*", "", text, flags=re.DOTALL).strip()
 
 
+# ── VRAM-aware model routing ───────────────────────────────────
+def get_loaded_models() -> List[str]:
+    """Visszaadja az Ollama VRAM-ban jelenleg betöltött modellek nevét."""
+    for url in OLLAMA_URLS:
+        ps_url = url.replace("/api/chat", "/api/ps")
+        try:
+            if _HAS_REQUESTS:
+                r = _req.get(ps_url, timeout=3)
+                return [m["name"] for m in r.json().get("models", [])]
+            req = urllib.request.Request(ps_url)
+            with urllib.request.urlopen(req, timeout=3) as r:
+                return [m["name"] for m in json.loads(r.read()).get("models", [])]
+        except Exception:
+            continue
+    return []
+
+
+def pick_best_model() -> str:
+    """VRAM-ban lévő modellt ad vissza elsőként; fallback a default-ra."""
+    loaded = get_loaded_models()
+    for m in [DEFAULT_MODEL] + FALLBACK_MODELS:
+        if m in loaded:
+            if m != DEFAULT_MODEL:
+                log_event("VRAM_ROUTING", f"VRAM-ban van: {m} → ezt használjuk")
+            return m
+    return DEFAULT_MODEL
+
+
 # ── Ollama ─────────────────────────────────────────────────────
 def ollama_chat(
     model: str,
@@ -136,8 +165,8 @@ def ollama_chat(
         try:
             if _HAS_REQUESTS:
                 if stream:
-                    # connect timeout rövid (10s), read timeout hosszú (model betöltés)
-                    resp = _req.post(url, json=payload, stream=True, timeout=(10, OLLAMA_TIMEOUT))
+                    # FIRST_TOKEN_TIMEOUT: ha ennyi másodperc alatt nem jön az első token → fallback
+                    resp = _req.post(url, json=payload, stream=True, timeout=(10, FIRST_TOKEN_TIMEOUT))
                     resp.raise_for_status()
                     return resp  # type: ignore[return-value]
                 resp = _req.post(url, json=payload, timeout=(10, OLLAMA_TIMEOUT))

@@ -29,6 +29,21 @@ from src.security import (
     safe_path,
 )
 
+# ── Agentic Tool Registry (Phase B) ────────────────────────────
+AGENT_TOOLS: dict[str, str] = {
+    "bash":        "Shell parancs futtatása. Args: {command: str, cwd: str?}",
+    "read_file":   "Fájl olvasása. Args: {path: str}",
+    "write_file":  "Fájl írása. Args: {path: str, content: str}",
+    "find_files":  "Glob minta szerinti fájlkeresés. Args: {pattern: str, path: str?}",
+    "grep_content":"Regex keresés fájlokban. Args: {pattern: str, path: str?, extensions: list?}",
+    "edit_file":   "String csere fájlban. Args: {path: str, old_string: str, new_string: str}",
+    "list_dir":    "Könyvtár listázása. Args: {path: str?}",
+    "git":         "Git parancs futtatása. Args: {args: str}",
+    "web_fetch":   "URL letöltése. Args: {url: str}",
+    "remote_exec": "SSH parancs futtatása. Args: {host: str, cmd: str, user: str?, key_path: str?}",
+    "task_done":   "Feladat befejezésének jelzése. Args: {summary: str}",
+}
+
 # Patterns that are always blocked regardless of whitelist
 _DANGER_RE = re.compile(
     r"\brm\s+-[a-z]*r[a-z]*f\s+/"
@@ -45,6 +60,69 @@ _DANGER_RE = re.compile(
 
 def _is_dangerous(cmd: str) -> bool:
     return bool(_DANGER_RE.search(cmd))
+
+
+# ── Agentic Tool Helpers (Phase B.2 + B.3) ────────────────────────
+def _edit_file_string_replace(path: str, old_string: str, new_string: str) -> str:
+    """String csere egy fájlban (az első előfordulást)."""
+    try:
+        real = safe_path(path) or path
+        content = pathlib.Path(real).read_text(encoding="utf-8")
+        count = content.count(old_string)
+
+        if count == 0:
+            return "[ERROR] old_string nem található a fájlban."
+
+        warn = ""
+        if count > 1:
+            warn = f"[WARNING] {count}-szer szerepel, első előfordulás cserélve.\n"
+
+        new_content = content.replace(old_string, new_string, 1)
+        pathlib.Path(real).write_text(new_content, encoding="utf-8")
+        log_event("EDIT_FILE", f"{path}: {len(old_string)} → {len(new_string)} kar")
+        return f"{warn}OK: {path} szerkesztve."
+    except Exception as exc:
+        log_event("EDIT_FILE_ERROR", str(exc))
+        return f"[ERROR] _edit_file_string_replace: {exc}"
+
+
+def _remote_exec(host: str, cmd: str, user: str = None, key_path: str = None) -> str:
+    """SSH parancs futtatása whitelist-alapú biztonsággal."""
+    try:
+        # Whitelist: FRANZ_DIR/ssh_hosts.txt
+        hosts_file = pathlib.Path(FRANZ_DIR) / "ssh_hosts.txt"
+        if not hosts_file.exists():
+            return "[DENIED] ssh_hosts.txt nem létezik — whitelist szükséges."
+
+        allowed_hosts = hosts_file.read_text().splitlines()
+        if host not in allowed_hosts:
+            return f"[DENIED] {host!r} nincs a whitelist-en."
+
+        if _is_dangerous(cmd):
+            return "[DENIED] Veszélyes parancs minta."
+
+        ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
+                   "-o", "ConnectTimeout=10"]
+        if key_path:
+            ssh_cmd += ["-i", key_path]
+
+        target = f"{user}@{host}" if user else host
+        ssh_cmd += [target, cmd]
+
+        result = subprocess.run(
+            ssh_cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        out = (result.stdout + result.stderr).strip()
+        log_event("REMOTE_EXEC", f"{target}: {cmd[:50]}…")
+        return out[:4000] if out else "(empty output)"
+    except subprocess.TimeoutExpired:
+        return "[TIMEOUT] SSH parancs túl sokáig futott (>30 s)."
+    except Exception as exc:
+        log_event("REMOTE_EXEC_ERROR", str(exc))
+        return f"[ERROR] _remote_exec: {exc}"
 
 
 # ── Whitelisted shell execution ────────────────────────────────
@@ -163,6 +241,38 @@ def exec_tool(name: str, args: dict) -> str:
             raw = html.unescape(raw)
             raw = re.sub(r"\n{3,}", "\n\n", raw).strip()
             return raw[:6000]
+
+        # ── Phase B.4: Agentic Tool Expansion ──────────────────────
+        elif name == "find_files":
+            pattern = args.get("pattern", "*")
+            path = args.get("path", ".")
+            return search_files(pattern, path)
+
+        elif name == "grep_content":
+            pattern = args.get("pattern", "")
+            path = args.get("path", ".")
+            exts = args.get("extensions")
+            if isinstance(exts, str):
+                exts = [e.strip() for e in exts.split(",")]
+            return grep_in_files(pattern, path, exts)
+
+        elif name == "edit_file":
+            path = args.get("path", "")
+            old_string = args.get("old_string", "")
+            new_string = args.get("new_string", "")
+            return _edit_file_string_replace(path, old_string, new_string)
+
+        elif name == "remote_exec":
+            host = args.get("host", "")
+            cmd = args.get("cmd", "")
+            user = args.get("user")
+            key_path = args.get("key_path")
+            return _remote_exec(host, cmd, user, key_path)
+
+        elif name == "task_done":
+            summary = args.get("summary", "Feladat befejezve.")
+            log_event("TASK_DONE", summary[:120])
+            return f"__TASK_DONE__:{summary}"
 
         else:
             return f"[ERROR] Ismeretlen tool: {name}"

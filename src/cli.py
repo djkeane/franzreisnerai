@@ -262,6 +262,8 @@ def build_agent_system_prompt(topic: str, query: str = "") -> str:
         + "1. Lépésről lépésre haladj, minden lépésnél egy tool-t hívj.\n"
         + "2. Ha befejezted, MINDIG hívd meg a `task_done` eszközt.\n"
         + "3. Soha ne generálj szöveget a ```tool blokkon kívül, ha éppen toolokat használsz.\n"
+        + "4. Ha bizonytalan vagy, nézz körül a fájlrendszerben vagy futtasd a `servers` eszközt.\n"
+        + "5. Ne válaszolj üresen. Ha nem tudsz tool-t hívni, magyarázd el miért.\n"
     )
 
 
@@ -1166,6 +1168,8 @@ def main() -> None:
     # VRAM-aware model warmup
     loaded = get_loaded_models()
     best = pick_best_model()
+    if not best:
+        best = _DEFAULT_MODEL
     if best in loaded:
         print(f"  Modell VRAM-ban: \033[92m{best}\033[0m")
     else:
@@ -1177,8 +1181,8 @@ def main() -> None:
 
     while True:
         try:
-            current_topic = get_active_topic()
-            prompt_str = f"\033[96mFranz\033[0m[\033[92m{current_topic}\033[0m]> "
+            topic = get_active_topic()
+            prompt_str = f"Franz[\033[92m{topic}\033[0m]> "
             user_input = get_input(prompt_str)
         except (KeyboardInterrupt, EOFError):
             print("\nViszlát!")

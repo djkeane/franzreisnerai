@@ -349,9 +349,18 @@ def _print_help() -> None:
   kubectl:<args>      kubectl parancs
   run:<cmd>           Shell parancs (whitelist-en szereplők)
 
+\033[1mTanulás / önfejlesztés:\033[0m
+  /tanul <szöveg>         Tény megtanulása (embedding + tárolás)
+  /tanul url:<url>        URL tartalmának megtanulása
+  /tanul core:<id>        Bejegyzés core-nak jelölése
+  /felejtsd <minta>       Bejegyzések törlése
+  /tudom                  Tanult tudás listája
+  /tudom <keresés>        Keresés a tudásban
+  /fejlodj                Tudás beépítése Modelfile-ba → ollama create
+
 \033[1mPlugin hook-ok:\033[0m  """ + ", ".join(list_hooks() or ["(nincs betöltve)"]) + """
 
-  Minden egyéb szöveg: LLM-nek küldve.
+  Minden egyéb szöveg: LLM-nek küldve (auto-routing: code→qwen2.5-coder:7b).
 """
     print(help_text)
 
@@ -499,6 +508,103 @@ def handle_agent_commands(user_input: str, history: List[Dict], registry) -> boo
     return False
 
 
+def handle_learn_commands(user_input: str) -> bool:
+    """
+    Tanulási parancsok:
+      /tanul <szöveg>         — tény megtanulása
+      /tanul url:<url>        — URL tartalmának megtanulása
+      /tanul core:<id>        — bejegyzés core-nak jelölése (Modelfile-ba kerül)
+      /felejtsd <minta>       — bejegyzések törlése
+      /tudom                  — tanult tudás listája
+      /tudom <keresés>        — keresés a tudásban
+      /fejlodj                — tanult tudás beépítése a Modelfile-ba (ollama create)
+    """
+    stripped = user_input.strip()
+
+    # ── /tanul ────────────────────────────────────────────────
+    if stripped.startswith("/tanul "):
+        rest = stripped[7:].strip()
+
+        if rest.startswith("url:"):
+            url = rest[4:].strip()
+            print(f"\033[33mLetöltés: {url}\033[0m")
+            content = fetch_url(url)
+            if content.startswith("[HIBA]"):
+                print(content)
+                return True
+            entry_id = learn(content, source=url)
+            preview = content[:120].replace("\n", " ")
+            print(f"\033[92m✓ Megtanulva [{entry_id}]:\033[0m {preview}…")
+            return True
+
+        if rest.startswith("core:"):
+            entry_id = rest[5:].strip()
+            ok = mark_core(entry_id, True)
+            if ok:
+                print(f"\033[92m✓ [{entry_id}] core-nak jelölve → /fejlodj-kor Modelfile-ba kerül.\033[0m")
+            else:
+                print(f"\033[91m[ERROR] Nem találtam ilyen ID-t: {entry_id}\033[0m")
+            return True
+
+        # Egyszerű szöveg tanulása
+        entry_id = learn(rest, source="user")
+        print(f"\033[92m✓ Megtanulva [{entry_id}]:\033[0m {rest[:100]}")
+        return True
+
+    # ── /felejtsd ─────────────────────────────────────────────
+    if stripped.startswith("/felejtsd "):
+        pattern = stripped[10:].strip()
+        count = forget(pattern)
+        if count:
+            print(f"\033[93m✓ {count} bejegyzés törölve (minta: '{pattern}').\033[0m")
+        else:
+            print(f"  Nincs ilyen bejegyzés: '{pattern}'")
+        return True
+
+    # ── /tudom ────────────────────────────────────────────────
+    if stripped == "/tudom" or stripped.startswith("/tudom "):
+        query = stripped[7:].strip() if stripped.startswith("/tudom ") else ""
+        if query:
+            # RAG keresés
+            from src.learn import recall
+            hits = recall(query, top_k=5, min_score=0.0)
+            if hits:
+                print(f"\n  Találatok '{query}' kérdésre:\n")
+                for h in hits:
+                    core_mark = " \033[93m[CORE]\033[0m" if h.get("core") else ""
+                    print(f"  [{h.get('id','?')}]{core_mark} {h.get('text','')[:120]}")
+                    print(f"         forrás: {h.get('source','?')} | hozzáférés: {h.get('access_count',0)}×\n")
+            else:
+                print("  (nincs találat)")
+        else:
+            entries = list_knowledge(20)
+            if not entries:
+                print("  (nincs tanult tudás — használd: /tanul <szöveg>)")
+                return True
+            print(f"\n  {'ID':<10} {'Core':<6} {'Elérés':<8} {'Forrás':<20} Szöveg")
+            print("  " + "-" * 80)
+            for e in entries:
+                core = "\033[93m●\033[0m" if e.get("core") else " "
+                src = e.get("source", "?")[:18]
+                text = e.get("text", "")[:50].replace("\n", " ")
+                cnt = e.get("access_count", 0)
+                print(f"  [{e.get('id','?')}]  {core:<5} {cnt:<8} {src:<20} {text}")
+            print()
+        return True
+
+    # ── /fejlodj ──────────────────────────────────────────────
+    if stripped == "/fejlodj":
+        print("\033[33mModelfile frissítés és franz-coder újrabuildelés…\033[0m")
+        result = bake(max_facts=15)
+        if result.startswith("✓"):
+            print(f"\033[92m{result}\033[0m")
+        else:
+            print(result)
+        return True
+
+    return False
+
+
 # ── Main REPL ──────────────────────────────────────────────────
 
 def main() -> None:
@@ -565,6 +671,10 @@ def main() -> None:
                 print(f"[ERROR] Diagnosztika: {exc}")
             continue
 
+        # ── Tanulási parancsok ──────────────────────────────────
+        if handle_learn_commands(stripped):
+            continue
+
         # ── Agens parancsok ─────────────────────────────────────
         if handle_agent_commands(stripped, history, registry):
             continue
@@ -584,7 +694,7 @@ def main() -> None:
 
         # ── LLM chat ────────────────────────────────────────────
         topic = get_active_topic()
-        sys_prompt = build_system_prompt(topic)
+        sys_prompt = build_system_prompt(topic, query=stripped)
         messages: List[Dict] = [{"role": "system", "content": sys_prompt}]
         messages += truncate_history(history)
         messages.append({"role": "user", "content": stripped})

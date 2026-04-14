@@ -432,6 +432,12 @@ def _print_help() -> None:
   /nyelvtan ellenőrzés <szöveg>  Szöveg ellenőrzése
   /nyt <rule_id>      Gyors nyelvtan parancs
 
+\033[1m🤖 SMART MODEL ROUTER (v7.5):\033[0m
+  /modellek           Összes modell listázása
+  /modell-status      Router státusza + teljesítmény
+  /modell-reset       Modell statisztikájának alaphelyzetbe állítása
+  /modell-test <m>    Modell tesztelése (timeout: 15s)
+
 \033[1mMunkafolyamatok:\033[0m
   /kod <feladat>      Teljes kódolási ciklus (generálás → írás → futtatás → debug)
   /projekt <feladat>  Többfájlos projekt generálása

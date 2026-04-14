@@ -135,10 +135,11 @@ def ollama_chat(
         try:
             if _HAS_REQUESTS:
                 if stream:
-                    resp = _req.post(url, json=payload, stream=True, timeout=OLLAMA_TIMEOUT)
+                    # connect timeout rövid (10s), read timeout hosszú (model betöltés)
+                    resp = _req.post(url, json=payload, stream=True, timeout=(10, OLLAMA_TIMEOUT))
                     resp.raise_for_status()
                     return resp  # type: ignore[return-value]
-                resp = _req.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
+                resp = _req.post(url, json=payload, timeout=(10, OLLAMA_TIMEOUT))
                 resp.raise_for_status()
                 return resp.json().get("message", {}).get("content", "")
             # urllib fallback (no streaming)

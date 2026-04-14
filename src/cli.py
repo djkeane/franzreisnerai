@@ -56,8 +56,10 @@ from src.tools import (
     exec_tool,
     kubectl_cmd,
     list_directory,
+    listening_ports,
     network_info,
     process_list,
+    running_services,
     system_status,
 )
 

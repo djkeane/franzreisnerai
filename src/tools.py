@@ -271,3 +271,92 @@ def network_info(target: str = "") -> str:
         return "Port nyitva"
     except Exception:
         return "Port zárva vagy nem elérhető"
+
+
+def listening_ports() -> str:
+    """
+    List all listening ports with associated processes.
+    Returns: port, PID, and process name for each LISTEN connection.
+    """
+    if not _HAS_PSUTIL:
+        return "[ERROR] psutil nincs telepítve."
+
+    try:
+        connections = psutil.net_connections()
+        listening = [c for c in connections if c.status == "LISTEN"]
+
+        if not listening:
+            return "(Nincs hallgatózó port)"
+
+        lines = ["Port  │ PID  │ Felhasználó   │ Folyamat"]
+        lines.append("─────────────────────────────────────────")
+
+        for conn in sorted(listening, key=lambda x: x.laddr.port):
+            port = conn.laddr.port
+            pid = conn.pid
+            try:
+                proc = psutil.Process(pid)
+                name = proc.name()
+                user = proc.username()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                name = "?"
+                user = "?"
+
+            lines.append(f"{port:5} │ {pid:4} │ {user:<13} │ {name}")
+
+        return "\n".join(lines)
+    except Exception as exc:
+        log_event("LISTENING_PORTS_ERROR", str(exc))
+        return f"[ERROR] listening_ports: {exc}"
+
+
+def running_services() -> str:
+    """
+    List known server/daemon processes currently running.
+    Searches for: web servers, databases, caches, message queues, Ollama, etc.
+    """
+    if not _HAS_PSUTIL:
+        return "[ERROR] psutil nincs telepítve."
+
+    known_services = {
+        # Web servers
+        "nginx", "apache2", "apache", "httpd", "gunicorn", "uwsgi",
+        "node", "python3", "python", "ruby", "java",
+        # Databases
+        "postgres", "postgresql", "mysql", "mariadb", "mongodb", "sqlite3",
+        # Caches
+        "redis-server", "redis", "memcached", "memcacheCp",
+        # Message queues
+        "rabbitmq", "kafka", "activemq",
+        # LLM / AI
+        "ollama", "vllm", "triton",
+        # System
+        "sshd", "docker", "containerd", "systemd", "systemd-resolved",
+    }
+
+    try:
+        running = []
+        for proc in psutil.process_iter(["pid", "name", "username"]):
+            try:
+                name = proc.info.get("name", "").lower()
+                if any(service in name for service in known_services):
+                    running.append(proc)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        if not running:
+            return "(Nincs ismert szolgáltatás futva)"
+
+        lines = ["PID  │ Felhasználó   │ Folyamat"]
+        lines.append("─────────────────────────────────────")
+
+        for proc in sorted(running, key=lambda p: p.info.get("pid", 0)):
+            pid = proc.info.get("pid", "?")
+            user = proc.info.get("username", "?")
+            pname = proc.info.get("name", "?")
+            lines.append(f"{pid:<4} │ {user:<13} │ {pname}")
+
+        return "\n".join(lines)
+    except Exception as exc:
+        log_event("RUNNING_SERVICES_ERROR", str(exc))
+        return f"[ERROR] running_services: {exc}"

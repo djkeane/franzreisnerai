@@ -50,9 +50,49 @@ class LLMGateway:
         "code":      ["groq", "openrouter", "ollama"],
         "hungarian": ["gemini", "openrouter", "ollama"],
         "research":  ["openrouter", "gemini", "ollama"],
+        "planner":   ["gemini", "openrouter", "ollama"],
+        "verifier":  ["groq", "ollama"],
         "general":   ["gemini", "groq", "openrouter", "ollama"],
         "system":    ["groq", "gemini", "ollama"],
     }
+
+    def _classify_task(self, messages: list[dict]) -> str:
+        """
+        Intelligens feladat-osztályozás a prompt alapján.
+        """
+        if not messages:
+            return "general"
+
+        last_msg = messages[-1].get("content", "").lower()
+        combined_context = " ".join([m.get("content", "").lower() for m in messages[-3:]])
+
+        # Kódolás kulcsszavak
+        code_keywords = ["python", "javascript", "typescript", "rust", "go", "kód ", " kód", "függvény", "class ", "class:", "api ", "script", "refaktor", "fix bug"]
+        # Kutatás/Elemzés
+        research_keywords = ["keress", "research", "browse", "github", "reddit", "elemzés", "audit", "dokumentáció"]
+        # Tervezés
+        planner_keywords = ["terv", "lépések", "hogyan kezdjem", "architektúra", "design", "workflow", "stratégia"]
+        # Ellenőrzés
+        verifier_keywords = ["tesztelj", "ellenőrizd", "működik", "verify", "check", "hiba?", "audit"]
+
+        if any(kw in last_msg for kw in verifier_keywords):
+            return "verifier"
+        if any(kw in last_msg for kw in planner_keywords):
+            return "planner"
+        
+        # Magyar nyelv detektálás (heuristic)
+        hu_chars = "áéíóöőúüű"
+        is_hungarian = any(char in last_msg for char in hu_chars) or any(kw in last_msg for kw in ["szia", "hogy vagy", "segíts"])
+        
+        if any(kw in last_msg for kw in code_keywords):
+            return "code"
+        if any(kw in last_msg for kw in research_keywords):
+            return "research"
+        
+        if is_hungarian:
+            return "hungarian"
+
+        return "general"
 
     def __init__(self) -> None:
         # .env betöltése ha még nem történt meg
@@ -113,7 +153,7 @@ class LLMGateway:
     def chat(
         self,
         messages: list[dict],
-        task_type: str = "general",
+        task_type: str = "auto",
         system: str = "",
         temperature: float = 0.3,
         max_tokens: int = 2048,
@@ -123,6 +163,11 @@ class LLMGateway:
         Fő belépési pont — routing + failover + cache.
         Visszaadja a szöveges választ.
         """
+        # Automatikus routing ha nincs explicit megadva
+        if task_type == "auto":
+            task_type = self._classify_task(messages)
+            log_event("SMART_ROUTING", f"Classified as: {task_type}")
+
         # Cache ellenőrzés
         if use_cache:
             cached = self._cache.get(messages, task_type)
@@ -170,12 +215,16 @@ class LLMGateway:
     def stream(
         self,
         messages: list[dict],
-        task_type: str = "general",
+        task_type: str = "auto",
         system: str = "",
         temperature: float = 0.3,
         max_tokens: int = 2048,
     ) -> Iterator[str]:
         """Streaming chat — szövegrészleteket yield-el."""
+        if task_type == "auto":
+            task_type = self._classify_task(messages)
+            log_event("SMART_ROUTING", f"Stream classified as: {task_type}")
+
         request = LLMRequest(
             messages=messages,
             system=system,

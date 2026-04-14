@@ -1,0 +1,52 @@
+version: "3.9"
+
+services:
+
+  # ── Ollama LLM szerver ────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: franz-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── Franz terminál asszisztens ────────────────────────────────
+  franz:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: franz
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      FRANZ_DIR: /app/data
+      PYTHONUNBUFFERED: "1"
+      OLLAMA_URL: "http://ollama:11434"
+    volumes:
+      - franz_data:/app/data
+      - ./plugins:/app/plugins:ro
+    stdin_open: true
+    tty: true
+    networks:
+      - franznet
+
+volumes:
+  ollama_data:
+    driver: local
+  franz_data:
+    driver: local
+
+networks:
+  franznet:
+    driver: bridge

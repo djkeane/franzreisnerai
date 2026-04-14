@@ -42,6 +42,7 @@ from src.memory import (
     set_active_topic,
     truncate_history,
 )
+from src.learn import bake, context_for, fetch_url, forget, learn, list_knowledge, mark_core
 from src.security import FRANZ_DIR, log_event
 from src.tools import (
     cat_file,
@@ -201,12 +202,12 @@ def _cpu_ram() -> str:
         return "CPU/RAM info nem elérhető"
 
 
-def build_system_prompt(topic: str) -> str:
+def build_system_prompt(topic: str, query: str = "") -> str:
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cwd = os.getcwd()
     branch = _git_branch()
     hw = _cpu_ram()
-    return (
+    base = (
         "Te vagy Franz, a DömösAiTech 2026 intelligens terminál-asszisztense.\n"
         "Magyarul válaszolsz, tömören és pontosan.\n\n"
         f"Dátum/idő: {now}\n"
@@ -216,6 +217,12 @@ def build_system_prompt(topic: str) -> str:
         f"Rendszer:  {hw}\n"
         f"Platform:  {platform.system()} {platform.release()}"
     )
+    # RAG: tanult tudás injektálása ha van releváns találat
+    if query:
+        ctx = context_for(query, top_k=3)
+        if ctx:
+            base += f"\n\n{ctx}"
+    return base
 
 
 # ── Agent loop ─────────────────────────────────────────────────

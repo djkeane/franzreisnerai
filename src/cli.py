@@ -406,7 +406,7 @@ def agent_loop(
 
 def _print_help() -> None:
     help_text = """
-\033[1mFranz v6.0 – Parancsok\033[0m
+\033[1mFranz v7.5 – Parancsok\033[0m
 
   /help               Ez a súgó
   /exit | /quit       Kilépés
@@ -423,6 +423,14 @@ def _print_help() -> None:
 \033[1mAgensek:\033[0m
   /agents             Elérhető agensek listája
   /agent <név> <feladat>  Agens indítása feladattal
+
+\033[1m📚 MAGYAR NYELVTAN TANÍTÓ (v7.5):\033[0m
+  /nyelvtan           Összes szabály listázása
+  /nyelvtan <rule_id> Egy szabály tanítása (pl. case_nominative)
+  /nyelvtan elemzés <mondat>  Mondat nyelvtani elemzése
+  /nyelvtan gyakorlat Nyelvtani gyakorlat kitöltése
+  /nyelvtan ellenőrzés <szöveg>  Szöveg ellenőrzése
+  /nyt <rule_id>      Gyors nyelvtan parancs
 
 \033[1mMunkafolyamatok:\033[0m
   /kod <feladat>      Teljes kódolási ciklus (generálás → írás → futtatás → debug)

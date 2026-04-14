@@ -609,6 +609,156 @@ def handle_learn_commands(user_input: str) -> bool:
     return False
 
 
+# ── Workflows parancsok ──────────────────────────────────────────
+
+def handle_workflow_commands(user_input: str) -> bool:
+    """
+    Workflow parancsok:
+      /kod <feladat>        — teljes kódolási ciklus (gen → fut → debug)
+      /projekt <feladat>    — többfájlos projekt generálás
+      /tanul-web <url/téma> — webről tanulás (scraping + RAG)
+      /loop                 — autonóm loop indítása
+      /loop-stop            — autonóm loop leállítása
+      /loop-status          — autonóm loop állapota
+    """
+    stripped = user_input.strip()
+
+    # ── /kod ────────────────────────────────────────────────────
+    if stripped.startswith("/kod "):
+        task = stripped[5:].strip()
+        if not task:
+            print("  Használat: /kod <feladat leírása>")
+            return True
+
+        print(f"\033[33m[Kódolási ciklus indítása…]\033[0m {task[:60]}")
+
+        try:
+            from src.llm import llm_gateway
+            result = coding_loop(
+                task,
+                working_dir=".",
+                llm_fn=lambda p: llm_gateway.chat([{"role": "user", "content": p}], task_type="code"),
+                max_retries=5,
+            )
+        except Exception as exc:
+            print(f"\033[91m[ERROR] Kódolás: {exc}\033[0m")
+            return True
+
+        if result["success"]:
+            print(f"\033[92m✓ Sikeres futás {result['iterations']} iteráció után\033[0m")
+            if result["output"]:
+                print(f"\n  OUTPUT:\n{result['output'][:500]}")
+        else:
+            print(f"\033[91m✗ Sikertelen {result['iterations']} próba után\033[0m")
+            print(f"  KÓD:\n{result['code'][:300]}")
+
+        return True
+
+    # ── /projekt ────────────────────────────────────────────────
+    if stripped.startswith("/projekt "):
+        task = stripped[9:].strip()
+        if not task:
+            print("  Használat: /projekt <feladat leírása>")
+            return True
+
+        print(f"\033[33m[Projekt generálás…]\033[0m {task[:60]}")
+
+        try:
+            from src.llm import llm_gateway
+            result = generate_project(
+                task,
+                output_dir="./generated",
+                llm_fn=lambda p: llm_gateway.chat([{"role": "user", "content": p}], task_type="code"),
+            )
+        except Exception as exc:
+            print(f"\033[91m[ERROR] Projekt: {exc}\033[0m")
+            return True
+
+        if result["success"]:
+            print(f"\033[92m✓ {result['files']} fájl generálva\033[0m")
+            for path in result["paths"][:5]:
+                print(f"  📄 {path}")
+        else:
+            print(f"\033[91m✗ Hibák történtek:\033[0m")
+            for err in result["errors"][:3]:
+                print(f"  • {err}")
+
+        return True
+
+    # ── /tanul-web ──────────────────────────────────────────────
+    if stripped.startswith("/tanul-web "):
+        topic = stripped[11:].strip()
+        if not topic:
+            print("  Használat: /tanul-web <url vagy téma>")
+            return True
+
+        print(f"\033[33m[Web tanulás…]\033[0m {topic[:60]}")
+
+        try:
+            from src.llm import llm_gateway
+            stored = auto_learn(
+                topic,
+                llm_fn=lambda p: llm_gateway.chat([{"role": "user", "content": p}], task_type="research"),
+                max_pages=3,
+            )
+        except Exception as exc:
+            print(f"\033[91m[ERROR] Tanulás: {exc}\033[0m")
+            return True
+
+        if stored > 0:
+            print(f"\033[92m✓ {stored} tény tárolta meg\033[0m")
+            log_event("WEB_LEARN", f"{topic[:50]}: {stored} facts")
+        else:
+            print(f"\033[93m  (nincs eredmény vagy letöltési hiba)\033[0m")
+
+        return True
+
+    # ── /loop ───────────────────────────────────────────────────
+    if stripped == "/loop":
+        auto = get_autonomous()
+        if auto.status()["running"]:
+            print("  Autonóm loop már fut → /loop-status")
+            return True
+
+        print("\033[33m[Autonóm loop indítása…]\033[0m")
+        auto.start(interval_sec=3600)  # 1 óra
+        status = auto.status()
+        print(f"\033[92m✓ Loop fut (iteráció/{status['iterations_today']})\033[0m")
+        log_event("AUTONOMOUS_START", "user request")
+        return True
+
+    # ── /loop-stop ──────────────────────────────────────────────
+    if stripped == "/loop-stop":
+        auto = get_autonomous()
+        if not auto.status()["running"]:
+            print("  Autonóm loop nem fut")
+            return True
+
+        print("\033[33m[Autonóm loop leállítása…]\033[0m")
+        auto.stop()
+        print("\033[92m✓ Loop leállítva\033[0m")
+        log_event("AUTONOMOUS_STOP", "user request")
+        return True
+
+    # ── /loop-status ────────────────────────────────────────────
+    if stripped == "/loop-status":
+        auto = get_autonomous()
+        status = auto.status()
+        running = "🟢 FUT" if status["running"] else "🔴 LEÁLLT"
+        print(f"\n  {running}")
+        print(f"  Iteráció ma: {status['iterations_today']}")
+        print(f"  API hívások: {status['api_calls_today']}")
+        print(f"  Tanult témák: {status['topics_learned']}")
+        if status["last_topics"]:
+            print(f"\n  Utolsó 5 téma:")
+            for topic in status["last_topics"][-5:]:
+                print(f"    • {topic['topic']}: {topic['facts']} fakt")
+        print()
+        return True
+
+    return False
+
+
 # ── Main REPL ──────────────────────────────────────────────────
 
 def main() -> None:
@@ -682,6 +832,10 @@ def main() -> None:
 
         # ── Tanulási parancsok ──────────────────────────────────
         if handle_learn_commands(stripped):
+            continue
+
+        # ── Workflow parancsok (kódolás, webtanulás, loop) ─────
+        if handle_workflow_commands(stripped):
             continue
 
         # ── Agens parancsok ─────────────────────────────────────

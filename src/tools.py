@@ -29,19 +29,25 @@ from src.security import (
     safe_path,
 )
 
-# ── Agentic Tool Registry (Phase B) ────────────────────────────
+# ── Agentic Tool Registry (Phase B + Extensions) ────────────────
 AGENT_TOOLS: dict[str, str] = {
-    "bash":        "Shell parancs futtatása. Args: {command: str, cwd: str?}",
-    "read_file":   "Fájl olvasása. Args: {path: str}",
-    "write_file":  "Fájl írása. Args: {path: str, content: str}",
-    "find_files":  "Glob minta szerinti fájlkeresés. Args: {pattern: str, path: str?}",
-    "grep_content":"Regex keresés fájlokban. Args: {pattern: str, path: str?, extensions: list?}",
-    "edit_file":   "String csere fájlban. Args: {path: str, old_string: str, new_string: str}",
-    "list_dir":    "Könyvtár listázása. Args: {path: str?}",
-    "git":         "Git parancs futtatása. Args: {args: str}",
-    "web_fetch":   "URL letöltése. Args: {url: str}",
-    "remote_exec": "SSH parancs futtatása. Args: {host: str, cmd: str, user: str?, key_path: str?}",
-    "task_done":   "Feladat befejezésének jelzése. Args: {summary: str}",
+    "bash":             "Shell parancs futtatása. Args: {command: str, cwd: str?}",
+    "read_file":        "Fájl olvasása. Args: {path: str}",
+    "write_file":       "Fájl írása. Args: {path: str, content: str}",
+    "find_files":       "Glob minta szerinti fájlkeresés. Args: {pattern: str, path: str?}",
+    "grep_content":     "Regex keresés fájlokban. Args: {pattern: str, path: str?, extensions: list?}",
+    "edit_file":        "String csere fájlban. Args: {path: str, old_string: str, new_string: str}",
+    "list_dir":         "Könyvtár listázása. Args: {path: str?}",
+    "git":              "Git parancs futtatása. Args: {args: str}",
+    "web_fetch":        "URL letöltése. Args: {url: str}",
+    "remote_exec":      "SSH parancs futtatása. Args: {host: str, cmd: str, user: str?, key_path: str?}",
+    "task_done":        "Feladat befejezésének jelzése. Args: {summary: str}",
+    # ── NEW Tools (v7.1 Extensions) ──────────────────────────────
+    "docker_exec":      "Docker konténerben parancs futtatása. Args: {image: str, cmd: str, mount: str?}",
+    "analyze_code":     "Python kód AST elemzése. Args: {path: str}",
+    "check_code_quality":"Kódminőség ellenőrzés (pylint, mypy). Args: {path: str, checks: list?}",
+    "run_tests":        "Tesztek futtatása (pytest, unittest). Args: {path: str, framework: str?}",
+    "suggest_fixes":    "AI alapú hiba javaslatokat. Args: {error_msg: str, code_snippet: str?}",
 }
 
 # Patterns that are always blocked regardless of whitelist
@@ -268,6 +274,32 @@ def exec_tool(name: str, args: dict) -> str:
             user = args.get("user")
             key_path = args.get("key_path")
             return _remote_exec(host, cmd, user, key_path)
+
+        # ── NEW Tools (v7.1 Extensions) ───────────────────────────
+        elif name == "docker_exec":
+            image = args.get("image", "")
+            cmd = args.get("cmd", "")
+            mount = args.get("mount", "")
+            return _docker_exec(image, cmd, mount)
+
+        elif name == "analyze_code":
+            path = args.get("path", "")
+            return _analyze_code(path)
+
+        elif name == "check_code_quality":
+            path = args.get("path", "")
+            checks = args.get("checks", ["pylint", "mypy"])
+            return _check_code_quality(path, checks)
+
+        elif name == "run_tests":
+            path = args.get("path", "")
+            framework = args.get("framework", "auto")
+            return _run_tests(path, framework)
+
+        elif name == "suggest_fixes":
+            error_msg = args.get("error_msg", "")
+            code_snippet = args.get("code_snippet", "")
+            return _suggest_fixes(error_msg, code_snippet)
 
         elif name == "task_done":
             summary = args.get("summary", "Feladat befejezve.")

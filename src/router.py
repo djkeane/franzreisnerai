@@ -73,22 +73,22 @@ _LIST_RE = re.compile(
 
 # ── Workflow parancsok ──────────────────────────────────────────
 _DIR_RE = re.compile(
-    r"^(térképezd\s+fel|listázd\s+(ki|meg)|mi\s+van|mi\s+van\s+a|nézzük\s+meg|mi\s+a)\s+(mappaib|könyvtár|direkt|folder|mapp)",
+    r"^(térképezd\s+fel|listázd|mi\s+van|nézzük\s+meg|mi\s+a|mappá)",
     re.IGNORECASE,
 )
 
 _CODE_GEN_RE = re.compile(
-    r"^(írj\s+(kód|program|scrip)|generálj\s+(kód|program)|csináld\s+meg\s+a\s+kódot)",
+    r"^(írj|generálj|csináld\s+meg|kódolj|fejlessz)",
     re.IGNORECASE,
 )
 
 _WEB_LEARN_RE = re.compile(
-    r"^(tanuld?\s+(meg\s+az\s+)?internetről|tanulj\s+meg\s+(az\s+)?webrő?l|keress\s+(meg\s+)?a|búvárkodj|keresés)",
+    r"(internetről|webrő?l|keress|búvárkodj)\b",
     re.IGNORECASE,
 )
 
 _LOOP_RE = re.compile(
-    r"^(indítsd\s+(el\s+)?az?\s+autonóm|loop|autonóm\s+tanulás)",
+    r"^(indítsd|autonóm|loop)",
     re.IGNORECASE,
 )
 
@@ -106,10 +106,16 @@ def natural_to_command(user_input: str) -> str | None:
     """
     s = user_input.strip()
 
-    # ── Tanulási parancsok ──────────────────────────────────────
+    # ── Tanulási parancsok (prioritás!) ────────────────────────
     m = _LEARN_RE.match(s)
     if m:
         rest = s[m.end():].strip()
+        # Ellenőrzés: van-e "internetről" vagy "webrő" a rest-ben?
+        if _WEB_LEARN_RE.search(rest):
+            # Web-tanulás: "tanuld meg az internetről pythont" → "/tanul-web python"
+            # Eltávolítjuk az "az internetről" részt
+            web_rest = re.sub(r"az?\s+internet(?:ről|rő?l)", "", rest, flags=re.IGNORECASE).strip()
+            return f"/tanul-web {web_rest}" if web_rest else "/tanul-web"
         return f"/tanul {rest}" if rest else None
 
     if _FORGET_RE.match(s):
@@ -128,19 +134,7 @@ def natural_to_command(user_input: str) -> str | None:
 
     if _CODE_GEN_RE.match(s):
         # "írj egy fib függvényt" → "/kod írj egy fib függvényt"
-        m = _CODE_GEN_RE.search(s)
-        if m:
-            rest = s[m.end():].strip()
-            return f"/kod {rest}" if rest else "/kod"
-        return "/kod"
-
-    if _WEB_LEARN_RE.match(s):
-        # "tanuld meg az internetről pythont" → "/tanul-web python"
-        m = _WEB_LEARN_RE.search(s)
-        if m:
-            rest = s[m.end():].strip()
-            return f"/tanul-web {rest}" if rest else "/tanul-web"
-        return "/tanul-web"
+        return f"/kod {s}"
 
     if _LOOP_RE.match(s):
         return "/loop"

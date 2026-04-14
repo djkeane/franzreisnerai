@@ -374,6 +374,12 @@ def _print_help() -> None:
 def handle_tool_commands(user_input: str) -> bool:
     stripped = user_input.strip()
 
+    # ── Könyvtár parancsok ──────────────────────────────────────
+    if stripped == "/dir" or stripped.startswith("/dir "):
+        path = stripped[4:].strip() if stripped.startswith("/dir ") else "."
+        print(list_directory(path))
+        return True
+
     if stripped.startswith("ls:"):
         print(list_directory(stripped[3:].strip() or "."))
         return True

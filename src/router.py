@@ -99,7 +99,7 @@ _LOOP_RE = re.compile(
 
 # ── Claude Code-szerű parancsok ──────────────────────────────────
 _GIT_RE = re.compile(
-    r"^(mi\s+változott|git\s+állapot|commitolj|mentsd\s+el|nézd\s+meg\s+a\s+változásokat)",
+    r"^(mi\s+a\s+változ|mi\s+változ|git\s+állapot|commitolj|mentsd\s+el|nézd\s+meg\s+a\s+változ)",
     re.IGNORECASE,
 )
 

@@ -471,6 +471,14 @@ def _print_help() -> None:
   /agents             Elérhető agensek listája
   /agent <név> <feladat>  Agens indítása feladattal
 
+\033[1m👥 DEVELOPER TEAM (v8.0):\033[0m
+  /team               Csapat státusza (6 ágent, terhelés)
+  /team-list          Összes ágent részletes listája
+  /team-task <f>      Feladat delegálása az egész csapatnak
+  /team <id> <f>      Feladat egy specifikus agenthez
+                      (id: llm-engineer, ui-programmer, backend-expert,
+                       frontend-designer, agent-researcher, devops-specialist)
+
 \033[1m📚 MAGYAR NYELVTAN TANÍTÓ (v7.5):\033[0m
   /nyelvtan           Összes szabály listázása
   /nyelvtan <rule_id> Egy szabály tanítása (pl. case_nominative)
@@ -1387,6 +1395,10 @@ def main() -> None:
 
         # ── Agens parancsok ─────────────────────────────────────
         if handle_agent_commands(stripped, history, registry):
+            continue
+
+        # ── Developer Team parancsok ────────────────────────────
+        if handle_team_commands(stripped, history):
             continue
 
         # ── Téma parancsok ─────────────────────────────────────

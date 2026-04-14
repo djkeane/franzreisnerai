@@ -21,6 +21,8 @@ _AGENTIC_KEYWORDS = [
     "telepít",
     "majd",
     "aztán",
+    "viszont",
+    "közben",
     "deploy",
     "lépés",
     "csináld meg",
@@ -31,9 +33,11 @@ _AGENTIC_KEYWORDS = [
     "hozz létre",
     "módosítsd",
     "szerkeszd",
+    "javítsd meg",
     "keress és",
     "ellenőrizd majd",
     "futtasd le",
+    "futtass",
     "install",
     "setup",
     "build",
@@ -44,6 +48,10 @@ _AGENTIC_KEYWORDS = [
     "hajtsd végre",
     "sorrend",
     "workflow",
+    "először",
+    "ezután",
+    "végül",
+    "után",
 ]
 
 _CODE_KEYWORDS = [

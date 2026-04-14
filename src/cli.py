@@ -1,0 +1,553 @@
+"""Franz – teljes interaktív REPL a terminálhoz. Belépési pont: main()."""
+
+from __future__ import annotations
+
+import datetime
+import os
+import pathlib
+import platform
+import subprocess
+import sys
+from typing import Dict, List, Optional
+
+# ── readline (opcionális, graceful degradation) ────────────────
+try:
+    import readline as _rl
+    _HAS_READLINE = True
+except ImportError:
+    _HAS_READLINE = False
+
+from src.config import cfg
+from src.hooks import list_hooks, load_hooks, trigger_hook
+from src.llm import (
+    MAX_TOOL_STEPS,
+    STREAM_OUTPUT,
+    StreamParser,
+    get_answer,
+    ollama_chat,
+    parse_tool_calls,
+    strip_tool_blocks,
+)
+from src.memory import (
+    get_active_topic,
+    list_topics,
+    load_topic_history,
+    make_snapshot,
+    revert_snapshot,
+    save_memory,
+    search_memory,
+    set_active_topic,
+    truncate_history,
+)
+from src.security import FRANZ_DIR, log_event
+from src.tools import (
+    cat_file,
+    disk_usage,
+    docker_cmd,
+    exec_shell_safe,
+    exec_tool,
+    kubectl_cmd,
+    list_directory,
+    network_info,
+    process_list,
+    system_status,
+)
+
+# ── ASCII Banner ───────────────────────────────────────────────
+_BANNER = r"""
+ ███████╗██████╗  █████╗ ███╗   ██╗███████╗
+ ██╔════╝██╔══██╗██╔══██╗████╗  ██║╚══███╔╝
+ █████╗  ██████╔╝███████║██╔██╗ ██║  ███╔╝
+ ██╔══╝  ██╔══██╗██╔══██║██║╚██╗██║ ███╔╝
+ ██║     ██║  ██║██║  ██║██║ ╚████║███████╗
+ ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝
+   Franz v5.0 – DömösAiTech 2026  |  Agentic Terminal AI
+"""
+
+_HISTORY_FILE = pathlib.Path.home() / ".franz_history"
+_DEFAULT_MODEL = cfg.get("ollama", "default_model", fallback="jarvis-hu-coder:latest")
+_CONFIRM_BASH = cfg.getboolean("agent", "confirm_bash", fallback=False)
+
+
+# ── Readline setup ─────────────────────────────────────────────
+
+def setup_readline() -> None:
+    if not _HAS_READLINE:
+        return
+    try:
+        _rl.read_history_file(str(_HISTORY_FILE))
+    except (FileNotFoundError, PermissionError):
+        pass
+    _rl.set_history_length(2000)
+
+    commands = [
+        "/help", "/exit", "/quit", "/topic", "/topics", "/snapshot", "/revert",
+        "/search", "/agent", "/agents", "/hooks", "/diag", "/clear",
+        "ls:", "cat:", "du:", "ps:", "top", "net:", "svc:", "docker:", "kubectl:", "run:",
+    ]
+
+    def _completer(text: str, state: int) -> Optional[str]:
+        matches = [c for c in commands if c.startswith(text)]
+        return matches[state] if state < len(matches) else None
+
+    _rl.set_completer(_completer)
+    _rl.parse_and_bind("tab: complete")
+
+
+def _save_history() -> None:
+    if _HAS_READLINE:
+        try:
+            _rl.write_history_file(str(_HISTORY_FILE))
+        except Exception:
+            pass
+
+
+# ── Input helpers ──────────────────────────────────────────────
+
+def get_input(prompt: str) -> str:
+    """
+    Többsoros bevitel:
+      - sor végén '\\' -> folytatás következő sorban
+      - '```' -> paste mód (addig olvas, amíg újabb '```' nem érkezik)
+    """
+    try:
+        line = input(prompt)
+    except (KeyboardInterrupt, EOFError):
+        return "/exit"
+
+    if line.strip() == "```":
+        print("  [paste mód – zárd '```'-vel]")
+        lines: List[str] = []
+        while True:
+            try:
+                chunk = input()
+            except (KeyboardInterrupt, EOFError):
+                break
+            if chunk.strip() == "```":
+                break
+            lines.append(chunk)
+        return "\n".join(lines)
+
+    parts = [line]
+    while parts[-1].endswith("\\"):
+        parts[-1] = parts[-1][:-1]
+        try:
+            parts.append(input("... "))
+        except (KeyboardInterrupt, EOFError):
+            break
+    return "\n".join(parts)
+
+
+# ── System prompt builder ──────────────────────────────────────
+
+def _git_branch() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=3,
+        )
+        branch = result.stdout.strip()
+        return branch if branch else "none"
+    except Exception:
+        return "none"
+
+
+def _cpu_ram() -> str:
+    try:
+        import psutil
+        cpu = psutil.cpu_percent(interval=0.1)
+        ram = psutil.virtual_memory()
+        return f"CPU {cpu:.0f}%  RAM {ram.percent:.0f}% ({ram.used // 1_048_576} MB / {ram.total // 1_048_576} MB)"
+    except Exception:
+        return "CPU/RAM info nem elérhető"
+
+
+def build_system_prompt(topic: str) -> str:
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cwd = os.getcwd()
+    branch = _git_branch()
+    hw = _cpu_ram()
+    return (
+        "Te vagy Franz, a DömösAiTech 2026 intelligens terminál-asszisztense.\n"
+        "Magyarul válaszolsz, tömören és pontosan.\n"
+        "Tool-híváshoz ```tool\\n{...}\\n``` blokkot használj.\n\n"
+        f"Dátum/idő: {now}\n"
+        f"Téma:      {topic}\n"
+        f"CWD:       {cwd}\n"
+        f"Git ág:    {branch}\n"
+        f"Rendszer:  {hw}\n"
+        f"Platform:  {platform.system()} {platform.release()}"
+    )
+
+
+# ── Agent loop ─────────────────────────────────────────────────
+
+def agent_loop(
+    messages: List[Dict],
+    tools_exec_fn=exec_tool,
+    model: str = _DEFAULT_MODEL,
+    stream: bool = STREAM_OUTPUT,
+) -> str:
+    """
+    Streaming + tool-call agent hurok, max MAX_TOOL_STEPS iteráció.
+    Visszaadja az utolsó teljes szöveges választ.
+    """
+    step = 0
+    final_text = ""
+
+    while step < MAX_TOOL_STEPS:
+        step += 1
+        parser = StreamParser()
+
+        if stream:
+            try:
+                resp = ollama_chat(model, messages, stream=True)
+                if resp is None:
+                    raise ConnectionError("Null response from Ollama")
+                for raw_line in resp.iter_lines():  # type: ignore[union-attr]
+                    if not raw_line:
+                        continue
+                    import json as _json
+                    try:
+                        obj = _json.loads(raw_line)
+                    except Exception:
+                        continue
+                    chunk = obj.get("message", {}).get("content", "")
+                    printable = parser.feed(chunk)
+                    if printable:
+                        print(printable, end="", flush=True)
+                    if obj.get("done"):
+                        break
+                remainder = parser.flush()
+                if remainder:
+                    print(remainder, end="", flush=True)
+                print()
+            except Exception as exc:
+                log_event("STREAM_ERROR", str(exc))
+                answer = get_answer(messages)
+                print(answer)
+                final_text = answer
+                break
+        else:
+            answer = get_answer(messages)
+            print(answer)
+            parser.text_parts = [answer]
+            parser.tool_calls = parse_tool_calls(answer)
+
+        full = parser.full_text if stream else answer  # type: ignore[possibly-undefined]
+        final_text = strip_tool_blocks(full)
+        tool_calls = parser.tool_calls if stream else parse_tool_calls(full)  # type: ignore[possibly-undefined]
+
+        if not tool_calls:
+            break
+
+        messages.append({"role": "assistant", "content": full})
+
+        for tc in tool_calls:
+            name = tc.get("tool", tc.get("name", ""))
+            args = tc.get("args", tc.get("arguments", {}))
+            log_event("TOOL_CALL", f"{name}({args})")
+
+            # Megerősítés kérése bash tool-ra ha confirm_bash = true
+            if name == "bash" and _CONFIRM_BASH:
+                cmd = args.get("command", "")
+                print(f"\033[33m[TOOL bash] Parancs: {cmd}\033[0m")
+                try:
+                    confirm = input("Futtatod? [i/N] ").strip().lower()
+                except (KeyboardInterrupt, EOFError):
+                    confirm = "n"
+                if confirm not in ("i", "igen", "y", "yes"):
+                    result = "[SKIP] Felhasználó megszakította."
+                    print(f"\033[33m{result}\033[0m")
+                    messages.append({"role": "user", "content": f"[Tool: {name}]\n{result}"})
+                    continue
+
+            result = tools_exec_fn(name, args)
+            tool_msg = f"[Tool: {name}]\n{result}"
+            print(f"\033[33m{tool_msg}\033[0m")
+            messages.append({"role": "user", "content": tool_msg})
+
+    return final_text
+
+
+# ── Help ───────────────────────────────────────────────────────
+
+def _print_help() -> None:
+    help_text = """
+\033[1mFranz v5.0 – Parancsok\033[0m
+
+  /help               Ez a súgó
+  /exit | /quit       Kilépés
+  /clear              Képernyő törlése
+  /diag               Diagnosztika futtatása
+
+\033[1mTéma-kezelés:\033[0m
+  /topic <név>        Aktív témát vált (létrehozza ha nem létezik)
+  /topics             Meglévő témák listája
+  /snapshot           Aktuális téma pillanatkép mentése
+  /revert <bak>       Visszaállítás backup fájlból
+  /search <kulcsszó>  Keresés az emlékezetben
+
+\033[1mAgensek:\033[0m
+  /agents             Elérhető agensek listája
+  /agent <név> <feladat>  Agens indítása feladattal
+
+\033[1mBeépített eszközök:\033[0m
+  ls:<path>           Könyvtár tartalom (Franz-on belül)
+  cat:<path>          Fájl olvasása
+  du:<path>           Lemezhasználat
+  ps:<filter>         Folyamatok listája
+  top                 Rendszer-terhelés (CPU/RAM)
+  net:<host:port>     Hálózati info / port ellenőrzés
+  svc:<action> <svc>  systemctl művelet
+  docker:<args>       Docker parancs
+  kubectl:<args>      kubectl parancs
+  run:<cmd>           Shell parancs (whitelist-en szereplők)
+
+\033[1mPlugin hook-ok:\033[0m  """ + ", ".join(list_hooks() or ["(nincs betöltve)"]) + """
+
+  Minden egyéb szöveg: LLM-nek küldve.
+"""
+    print(help_text)
+
+
+# ── Command handlers ───────────────────────────────────────────
+
+def handle_tool_commands(user_input: str) -> bool:
+    stripped = user_input.strip()
+
+    if stripped.startswith("ls:"):
+        print(list_directory(stripped[3:].strip() or "."))
+        return True
+    if stripped.startswith("cat:"):
+        print(cat_file(stripped[4:].strip()))
+        return True
+    if stripped.startswith("du:"):
+        print(disk_usage(stripped[3:].strip() or "."))
+        return True
+    if stripped.startswith("ps:"):
+        print(process_list(stripped[3:].strip()))
+        return True
+    if stripped == "top":
+        print(_cpu_ram())
+        return True
+    if stripped.startswith("net:"):
+        print(network_info(stripped[4:].strip()))
+        return True
+    if stripped.startswith("svc:"):
+        rest = stripped[4:].strip().split(None, 1)
+        if len(rest) == 2:
+            print(system_status(rest[0], rest[1]))
+        else:
+            print("[ERROR] Használat: svc:<action> <service_name>")
+        return True
+    if stripped.startswith("docker:"):
+        print(docker_cmd(stripped[7:].strip()))
+        return True
+    if stripped.startswith("kubectl:"):
+        print(kubectl_cmd(stripped[8:].strip()))
+        return True
+    if stripped.startswith("run:"):
+        print(exec_shell_safe(stripped[4:].strip()))
+        return True
+
+    return False
+
+
+def handle_topic_commands(user_input: str, history: List[Dict]) -> bool:
+    stripped = user_input.strip()
+
+    if stripped.startswith("/topic "):
+        new_topic = stripped[7:].strip()
+        if new_topic:
+            set_active_topic(new_topic)
+            history.clear()
+            history.extend(load_topic_history(new_topic))
+            print(f"Téma váltva: \033[92m{new_topic}\033[0m ({len(history)} bejegyzés)")
+            log_event("TOPIC_SWITCH", new_topic)
+        else:
+            print(f"Aktív téma: \033[92m{get_active_topic()}\033[0m")
+        return True
+
+    if stripped == "/topics":
+        topics = list_topics()
+        active = get_active_topic()
+        for t in topics:
+            print(f"  {'*' if t == active else ' '} {t}")
+        if not topics:
+            print("  (nincs téma)")
+        return True
+
+    if stripped == "/snapshot":
+        bak = make_snapshot(get_active_topic())
+        print(f"Pillanatkép: {bak}" if bak else "Nincs mit menteni.")
+        return True
+
+    if stripped.startswith("/revert "):
+        bak_name = stripped[8:].strip()
+        topic = get_active_topic()
+        if revert_snapshot(topic, bak_name):
+            history.clear()
+            history.extend(load_topic_history(topic))
+            print(f"Visszaállítva: {bak_name}")
+        else:
+            print(f"[ERROR] Backup nem található: {bak_name}")
+        return True
+
+    if stripped.startswith("/search "):
+        query = stripped[8:].strip()
+        results = search_memory(get_active_topic(), query)
+        if results:
+            for r in results:
+                print(f"  [{r.get('role','?')}] {r.get('timestamp','')[:19]}  {r.get('content','')[:120]}")
+        else:
+            print("  (nincs találat)")
+        return True
+
+    return False
+
+
+def handle_agent_commands(user_input: str, history: List[Dict], registry) -> bool:
+    stripped = user_input.strip()
+
+    if stripped == "/agents":
+        agents = registry.list()
+        if agents:
+            print(f"\n{'Név':<20}  {'Megjelenési név':<25}  Leírás")
+            print("-" * 80)
+            for name, display, desc in agents:
+                print(f"  {name:<18}  {display:<25}  {desc}")
+        else:
+            print("  (nincs betöltött agens)")
+        print()
+        return True
+
+    if stripped.startswith("/agent "):
+        rest = stripped[7:].strip()
+        parts = rest.split(None, 1)
+        if len(parts) < 2:
+            print("[ERROR] Használat: /agent <AgentNév> <feladat>")
+            return True
+        agent_name, task = parts[0], parts[1]
+        agent = registry.get(agent_name)
+        if agent is None:
+            print(f"[ERROR] Ismeretlen agens: {agent_name!r}")
+            print(f"  Elérhető: {[n for n, _, _ in registry.list()]}")
+            return True
+
+        topic = get_active_topic()
+        sys_prompt = agent.system_prompt(task)  # type: ignore[attr-defined]
+        messages: List[Dict] = [{"role": "system", "content": sys_prompt}]
+        messages += truncate_history(history)
+        messages.append({"role": "user", "content": task})
+
+        print(f"\n\033[94m[{agent.display_name}]\033[0m {task}\n")  # type: ignore[attr-defined]
+        answer = agent_loop(messages, model=agent.model)  # type: ignore[attr-defined]
+
+        save_memory(topic, "user", f"[{agent_name}] {task}")
+        save_memory(topic, "assistant", answer)
+        history.append({"role": "user", "content": task})
+        history.append({"role": "assistant", "content": answer})
+        log_event("AGENT_RUN", f"{agent_name}: {task[:80]}")
+        return True
+
+    return False
+
+
+# ── Main REPL ──────────────────────────────────────────────────
+
+def main() -> None:
+    """Franz főhurok."""
+    setup_readline()
+    load_hooks()
+
+    from src.agents import AgentRegistry
+    registry = AgentRegistry()
+
+    topic = get_active_topic()
+    history: List[Dict] = list(truncate_history(load_topic_history(topic)))
+
+    print(_BANNER)
+    print(f"  Téma: \033[92m{topic}\033[0m  |  Agensek: {len(registry.list())}  |  Hook-ok: {len(list_hooks())}")
+    print("  Írd: \033[1m/help\033[0m a parancsokért, \033[1m/exit\033[0m a kilépéshez.\n")
+    log_event("SESSION_START", f"topic={topic}")
+
+    while True:
+        try:
+            current_topic = get_active_topic()
+            prompt_str = f"\033[96mFranz\033[0m[\033[92m{current_topic}\033[0m]> "
+            user_input = get_input(prompt_str)
+        except (KeyboardInterrupt, EOFError):
+            print("\nViszlát!")
+            _save_history()
+            log_event("SESSION_END", "KeyboardInterrupt")
+            sys.exit(0)
+
+        stripped = user_input.strip()
+        if not stripped:
+            continue
+
+        # ── Meta-parancsok ──────────────────────────────────────
+        if stripped in ("/exit", "/quit"):
+            print("Viszlát!")
+            _save_history()
+            log_event("SESSION_END", "exit")
+            sys.exit(0)
+
+        if stripped in ("/help", "help"):
+            _print_help()
+            continue
+
+        if stripped == "/clear":
+            os.system("clear" if os.name != "nt" else "cls")
+            continue
+
+        if stripped == "/diag":
+            try:
+                from src.diagnostics import run_diagnostics
+                run_diagnostics()
+            except Exception as exc:
+                print(f"[ERROR] Diagnosztika: {exc}")
+            continue
+
+        # ── Agens parancsok ─────────────────────────────────────
+        if handle_agent_commands(stripped, history, registry):
+            continue
+
+        # ── Téma parancsok ─────────────────────────────────────
+        if handle_topic_commands(stripped, history):
+            continue
+
+        # ── Beépített eszközök ──────────────────────────────────
+        if handle_tool_commands(stripped):
+            log_event("CMD", stripped[:100])
+            continue
+
+        # ── Plugin hook-ok ──────────────────────────────────────
+        if trigger_hook("input", stripped):
+            continue
+
+        # ── LLM chat ────────────────────────────────────────────
+        topic = get_active_topic()
+        sys_prompt = build_system_prompt(topic)
+        messages: List[Dict] = [{"role": "system", "content": sys_prompt}]
+        messages += truncate_history(history)
+        messages.append({"role": "user", "content": stripped})
+
+        log_event("USER_INPUT", stripped[:200])
+        save_memory(topic, "user", stripped)
+
+        print()
+        answer = agent_loop(messages)
+        print()
+
+        save_memory(topic, "assistant", answer)
+        history.append({"role": "user", "content": stripped})
+        history.append({"role": "assistant", "content": answer})
+        log_event("ASSISTANT_REPLY", answer[:200])
+
+        _save_history()
+
+
+if __name__ == "__main__":
+    main()

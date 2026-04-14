@@ -325,7 +325,7 @@ def agent_loop(
 
 def _print_help() -> None:
     help_text = """
-\033[1mFranz v5.0 – Parancsok\033[0m
+\033[1mFranz v6.0 – Parancsok\033[0m
 
   /help               Ez a súgó
   /exit | /quit       Kilépés
@@ -343,7 +343,18 @@ def _print_help() -> None:
   /agents             Elérhető agensek listája
   /agent <név> <feladat>  Agens indítása feladattal
 
+\033[1mMunkafolyamatok:\033[0m
+  /kod <feladat>      Teljes kódolási ciklus (generálás → írás → futtatás → debug)
+  /projekt <feladat>  Többfájlos projekt generálása
+  /tanul-web <téma>   Web keresés + tanulás (DuckDuckGo → RAG)
+  /loop               Autonóm loop indítása (tanulás + fejlesztés)
+  /loop-status        Loop állapota
+  /loop-stop          Loop leállítása
+
 \033[1mBeépített eszközök:\033[0m
+  /dir [path]         Könyvtár tartalom listázása
+  /servers            Hallgatózó portok + futó szolgáltatások
+  /ports              Hallgatózó portok listája
   ls:<path>           Könyvtár tartalom (Franz-on belül)
   cat:<path>          Fájl olvasása
   du:<path>           Lemezhasználat
@@ -380,6 +391,18 @@ def handle_tool_commands(user_input: str) -> bool:
     if stripped == "/dir" or stripped.startswith("/dir "):
         path = stripped[4:].strip() if stripped.startswith("/dir ") else "."
         print(list_directory(path))
+        return True
+
+    # ── Szerver / Port parancsok ────────────────────────────────
+    if stripped == "/servers":
+        print("\n📡 Hallgatózó portok:")
+        print(listening_ports())
+        print("\n🔧 Futó szolgáltatások:")
+        print(running_services())
+        return True
+
+    if stripped == "/ports":
+        print(listening_ports())
         return True
 
     if stripped.startswith("ls:"):

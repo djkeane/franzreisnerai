@@ -73,7 +73,12 @@ _LIST_RE = re.compile(
 
 # ── Workflow parancsok ──────────────────────────────────────────
 _DIR_RE = re.compile(
-    r"^(térképezd\s+fel|listázd|mi\s+van|nézzük\s+meg|mi\s+a|mappá)",
+    r"^(térképezd\s+fel|listázd|mi\s+van|nézzük\s+meg|nézd\s+meg|mutasd|mi\s+a|mappá)",
+    re.IGNORECASE,
+)
+
+_SERVERS_RE = re.compile(
+    r"(szerver|port|szolgáltatás|daemon|futó\s+folyamat|listening)",
     re.IGNORECASE,
 )
 
@@ -129,6 +134,13 @@ def natural_to_command(user_input: str) -> str | None:
         return "/tudom"
 
     # ── Workflow parancsok ──────────────────────────────────────
+
+    # Szerver/port lekérdezések (nagyobb prioritás mint /dir)
+    # "nézd meg milyen szerverek futnak", "milyen portok vannak nyitva", stb.
+    if _SERVERS_RE.search(s):
+        if re.search(r"^(nézd\s+meg|mutasd|milyen|mik\s+a|mik\s+az|futó|aktív)", s, re.IGNORECASE):
+            return "/servers"
+
     if _DIR_RE.match(s):
         return "/dir"
 

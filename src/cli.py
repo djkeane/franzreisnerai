@@ -1087,21 +1087,35 @@ def main() -> None:
 
         # ── LLM chat ────────────────────────────────────────────
         topic = get_active_topic()
-        sys_prompt = build_system_prompt(topic, query=stripped)
-        messages: List[Dict] = [{"role": "system", "content": sys_prompt}]
-        messages += truncate_history(history)
-        messages.append({"role": "user", "content": stripped})
 
         log_event("USER_INPUT", stripped[:200])
         save_memory(topic, "user", stripped)
 
-        # Auto-routing: kód kérdés → CodeAgent modell, egyéb → default
-        from src.router import route
-        routed_model, agent_type = route(stripped)
-        if agent_type == "code":
-            print(f"\033[90m[code→{routed_model}]\033[0m ")
-        print()
-        answer = agent_loop(messages, model=routed_model)
+        # Phase A.4: Classify task type (agentic vs. regular)
+        task = classify(stripped)
+        log_event("CLASSIFY", f"{task.type}, agentic={task.is_agentic}")
+
+        if task.is_agentic:
+            # Agentic mode: use agent-specific prompt and tool registry
+            sys_prompt = build_agent_system_prompt(topic, query=stripped)
+            messages: List[Dict] = [{"role": "system", "content": sys_prompt}]
+            messages += truncate_history(history)
+            messages.append({"role": "user", "content": stripped})
+            print(f"\033[92m[agentic→{task.model_hint}]\033[0m ")
+            print()
+            answer = agent_loop(messages, model=task.model_hint)
+        else:
+            # Regular mode: use router-based model selection
+            from src.router import route
+            routed_model, agent_type = route(stripped)
+            sys_prompt = build_system_prompt(topic, query=stripped)
+            messages: List[Dict] = [{"role": "system", "content": sys_prompt}]
+            messages += truncate_history(history)
+            messages.append({"role": "user", "content": stripped})
+            if agent_type == "code":
+                print(f"\033[90m[code→{routed_model}]\033[0m ")
+            print()
+            answer = agent_loop(messages, model=routed_model)
         print()
 
         save_memory(topic, "assistant", answer)

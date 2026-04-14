@@ -21,12 +21,25 @@ from src.security import log_event
 # SMART OLLAMA WRAPPER — Timeout + Intelligent Fallback
 # ═══════════════════════════════════════════════════════════════════════════════
 
-OLLAMA_URLS = [
-    "http://localhost:11434",
-    "http://192.168.100.22:11434",
-]
+import os as _os
+import configparser as _cp
 
-DEFAULT_TIMEOUT = 45  # másodperc
+def _load_ollama_config() -> tuple[list[str], int, int]:
+    """franz.cfg [ollama] szekciójából olvassa az URL-eket és timeoutokat."""
+    cfg = _cp.ConfigParser()
+    _cfg_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))), "franz.cfg")
+    cfg.read(_cfg_path)
+    urls_raw = cfg.get("ollama", "url", fallback="http://localhost:11434")
+    urls = [u.strip() for u in urls_raw.split(",") if u.strip()]
+    timeout = cfg.getint("ollama", "timeout", fallback=180)
+    first_token = cfg.getint("ollama", "first_token_timeout", fallback=60)
+    return urls, timeout, first_token
+
+_OLLAMA_URLS_CFG, _TIMEOUT_CFG, _FIRST_TOKEN_CFG = _load_ollama_config()
+
+OLLAMA_URLS = _OLLAMA_URLS_CFG
+DEFAULT_TIMEOUT = _TIMEOUT_CFG        # franz.cfg-ből: 180s
+FIRST_TOKEN_TIMEOUT = _FIRST_TOKEN_CFG  # franz.cfg-ből: 60s
 
 
 class SmartOllamaClient:
@@ -206,7 +219,7 @@ class SmartOllamaClient:
 
         start_time = time.time()
         last_token_time = start_time
-        first_token_timeout = 20  # első token 20 mp alatt kell jöjjön
+        first_token_timeout = FIRST_TOKEN_TIMEOUT  # franz.cfg-ből: 60s
 
         try:
             proc = subprocess.Popen(

@@ -260,38 +260,42 @@ def bake(max_facts: int = 15, min_access: int = 0) -> str:
         f"- [{e.get('id','?')}] {e.get('text','')[:200]}"
         for e in selected
     )
-    inject = (
-        f"\n{_BAKE_MARKER_START}\n"
-        f"Az alábbi tényeket megtanultam és biztosan tudok róluk:\n"
+    inject_block = (
+        f"{_BAKE_MARKER_START}\n"
+        f"Az alábbi tényeket megtanultam:\n"
         f"{facts_block}\n"
-        f"{_BAKE_MARKER_END}\n"
+        f"{_BAKE_MARKER_END}"
     )
 
-    # Modelfile szerkesztése: régi beépített blokk cseréje
     content = MODELFILE.read_text(encoding="utf-8")
-    # Régi blokk eltávolítása
-    cleaned = re.sub(
-        rf"{re.escape(_BAKE_MARKER_START)}.*?{re.escape(_BAKE_MARKER_END)}\n?",
+
+    # 1. Régi bake-blokk eltávolítása a SYSTEM blokkból
+    content = re.sub(
+        rf"\n?{re.escape(_BAKE_MARKER_START)}.*?{re.escape(_BAKE_MARKER_END)}\n?",
         "",
         content,
         flags=re.DOTALL,
     )
-    # SYSTEM """ blokkon belülre injektálás (a záró """ elé)
-    if 'SYSTEM """' in cleaned:
-        cleaned = cleaned.replace('"""', inject + '"""', 1)
-        # Az első occurrence helyettesítése nem lesz jó ha SYSTEM """\n...
-        # Pontosabb: a záró """ elé rakjuk
-        cleaned = re.sub(
-            r'(SYSTEM """)(.*?)(""")',
-            lambda m: m.group(1) + m.group(2).rstrip() + "\n" + inject + m.group(3),
-            cleaned,
-            count=1,
-            flags=re.DOTALL,
+
+    # 2. SYSTEM """ ... """ tartalmának megkeresése és bővítése
+    #    A tanult tények a SYSTEM blokk végére (záró """ elé) kerülnek.
+    system_pattern = re.compile(r'(SYSTEM\s+""")(.*?)(""")', re.DOTALL)
+    match = system_pattern.search(content)
+    if match:
+        original_body = match.group(2).rstrip()
+        new_body = original_body + "\n\n" + inject_block + "\n"
+        content = (
+            content[: match.start()]
+            + match.group(1)
+            + new_body
+            + match.group(3)
+            + content[match.end() :]
         )
     else:
-        cleaned += f'\nSYSTEM """{inject}"""\n'
+        # Nincs SYSTEM blokk → hozzáadjuk
+        content += f'\nSYSTEM """\n{inject_block}\n"""\n'
 
-    MODELFILE.write_text(cleaned, encoding="utf-8")
+    MODELFILE.write_text(content, encoding="utf-8")
     log_event("BAKE_MODELFILE", f"{len(selected)} tény beépítve")
 
     # ollama create újrabuildelés

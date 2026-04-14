@@ -811,6 +811,73 @@ def handle_grammar_commands(user_input: str) -> bool:
     return False
 
 
+def handle_router_commands(user_input: str) -> bool:
+    """
+    Smart Model Router parancsok (v7.5):
+      /modellek               — Összes modell listázása
+      /modell-status          — Router státusza + teljesítmény
+      /modell-reset           — Modell statisztikájának alaphelyzetbe állítása
+      /modell-test <model>    — Modell tesztelése
+    """
+    stripped = user_input.strip()
+
+    if stripped == "/modellek":
+        from src.model_router import list_all_models
+        models = list_all_models()
+
+        print("\n╔══════════════════════════════════════════════════════════════════════════════╗")
+        print("║ 🤖 SMART MODEL ROUTER — ELÉRHETŐ MODELLEK")
+        print("╚══════════════════════════════════════════════════════════════════════════════╝\n")
+
+        by_category = {}
+        for name, info in models.items():
+            cat = info["category"]
+            if cat not in by_category:
+                by_category[cat] = []
+            by_category[cat].append((name, info))
+
+        for cat in sorted(by_category.keys()):
+            print(f"\n🏷️  {cat.upper()}")
+            print("─" * 80)
+            for name, info in by_category[cat]:
+                enabled = "✅" if info["enabled"] else "❌"
+                print(f"{enabled} {name:30} | Speed: {info['speed']:6} | Quality: {info['quality']:6}")
+                print(f"   Timeout: {info['timeout']:6} | Suitable: {', '.join(info['suitable_for'][:3])}")
+                if info["failures"] > 0:
+                    print(f"   ⚠️  Failures: {info['failures']} | Avg response: {info['avg_response_time']}")
+
+        return True
+
+    if stripped == "/modell-status":
+        from src.llm.smart_ollama import get_smart_model_status
+        print(get_smart_model_status())
+        return True
+
+    if stripped == "/modell-reset":
+        from src.model_router import router
+        router.reset_model_stats()
+        print("✅ Összes modell statisztikája alaphelyzetbe állítva")
+        return True
+
+    if stripped.startswith("/modell-test "):
+        model = stripped[13:].strip()
+        print(f"🧪 {model} tesztelése...")
+        # Ez egy egyszerű tesztület
+        from src.llm.smart_ollama import smart_chat
+        result = smart_chat(
+            [{"role": "user", "content": "Válaszolj: OK"}],
+            model=model,
+            timeout=15
+        )
+        if result:
+            print(f"✅ {model} válaszolt: {result[:100]}…")
+        else:
+            print(f"❌ {model} nem válaszolt vagy timeout")
+        return True
+
+    return False
+
+
 def handle_learn_commands(user_input: str) -> bool:
     """
     Tanulási parancsok:
@@ -1153,6 +1220,11 @@ def main() -> None:
         # ── Magyar Nyelvtan Tanító parancsok ─────────────────────
         if handle_grammar_commands(stripped):
             log_event("GRAMMAR_CMD", stripped[:100])
+            continue
+
+        # ── Smart Model Router parancsok ──────────────────────────
+        if handle_router_commands(stripped):
+            log_event("ROUTER_CMD", stripped[:100])
             continue
 
         # ── Plugin hook-ok ──────────────────────────────────────

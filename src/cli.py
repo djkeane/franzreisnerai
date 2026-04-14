@@ -85,7 +85,7 @@ _BANNER = r"""
  ██╔══╝  ██╔══██╗██╔══██║██║╚██╗██║ ███╔╝
  ██║     ██║  ██║██║  ██║██║ ╚████║███████╗
  ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝
-   Franz v6.0 – DömösAiTech 2026  |  Multi-LLM Agentic Terminal AI
+   Franz v7.5 – DömösAiTech 2026  |  Advanced Agentic AI Terminal
 """
 
 _HISTORY_FILE = pathlib.Path.home() / ".franz_history"

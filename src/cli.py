@@ -209,7 +209,9 @@ def build_system_prompt(topic: str) -> str:
     return (
         "Te vagy Franz, a DömösAiTech 2026 intelligens terminál-asszisztense.\n"
         "Magyarul válaszolsz, tömören és pontosan.\n"
-        "Tool-híváshoz ```tool\\n{...}\\n``` blokkot használj.\n\n"
+        "Ha bash parancsot, fájlműveletet vagy rendszereszközt kell futtatni, "
+        "írj egy JSON tool-hívást egyetlen ```tool``` blokkba. "
+        "Egyébként csak szöveggel válaszolj – ne generálj tool blokkot.\n\n"
         f"Dátum/idő: {now}\n"
         f"Téma:      {topic}\n"
         f"CWD:       {cwd}\n"

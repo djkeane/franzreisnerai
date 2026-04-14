@@ -78,12 +78,12 @@ _DIR_RE = re.compile(
 )
 
 _SERVERS_RE = re.compile(
-    r"(szerver|port|szolgáltatás|daemon|futó\s+folyamat|listening|halgatóz|hallgatóz|szerv)",
+    r"(szerver|port|szolgáltatás|daemon|futó\s+folyamat|listening|halgatóz|hallgatóz|szerv|mik\s+futnak|keresd\s+meg\s+a\s+szervereket)",
     re.IGNORECASE,
 )
 
 _CODE_GEN_RE = re.compile(
-    r"^(írj|generálj|csináld\s+meg|kódolj|fejlessz)",
+    r"^(írj|generálj|csináld\s+meg|kódolj|fejlessz|tudsz\s+valamit\s+késziteni|készíts\s+valamit)",
     re.IGNORECASE,
 )
 

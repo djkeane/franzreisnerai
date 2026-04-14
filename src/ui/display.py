@@ -50,3 +50,8 @@ def display_think_start():
 
 def display_task_done(summary):
     console.print(Panel(f"[bold green]✅ FELADAT KÉSZ:[/bold green]\n{summary}", border_style="green", box=box.DOUBLE))
+
+def display_git_op(op_type, message):
+    icons = {"commit": "📦", "push": "🚀", "branch": "🌿", "merge": "🔀"}
+    icon = icons.get(op_type, "⚙️")
+    console.print(f"[bold magenta]{icon} GIT {op_type.upper()}:[/bold magenta] {message}")

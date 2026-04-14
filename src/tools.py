@@ -203,16 +203,38 @@ def exec_tool(name: str, args: dict) -> str:
                     f"  {cmd}\n"
                     "Run manually in your terminal if you are sure."
                 )
+            env = {
+                **os.environ,
+                "TERM": "xterm-256color",
+                "FORCE_COLOR": "1",
+                "OS": "MacOS" if "darwin" in subprocess.getoutput("uname").lower() else "Linux",
+                "SHELL": "/bin/zsh" if os.path.exists("/bin/zsh") else "/bin/bash",
+                "CLICOLOR_FORCE": "1"
+            }
+            cwd = args.get("cwd") or os.getcwd()
+            
             result = subprocess.run(
                 cmd,
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=30,
-                env={**os.environ},
+                timeout=60, # Megemelt timeout
+                env=env,
+                cwd=cwd
             )
-            out = (result.stdout + result.stderr).strip()
-            return out[:8000] if out else "(no output)"
+            stdout = result.stdout.strip()
+            stderr = result.stderr.strip()
+            
+            full_out = []
+            if stdout:
+                full_out.append(stdout)
+            if stderr:
+                full_out.append(f"[STDERR]\n{stderr}")
+            
+            if result.returncode != 0:
+                full_out.append(f"[EXIT CODE] {result.returncode}")
+                
+            return "\n".join(full_out)[:8000] if full_out else "(no output)"
 
         elif name == "read_file":
             path = pathlib.Path(os.path.expanduser(args.get("path", ""))).resolve()
@@ -289,6 +311,11 @@ def exec_tool(name: str, args: dict) -> str:
             user = args.get("user")
             key_path = args.get("key_path")
             return _remote_exec(host, cmd, user, key_path)
+
+        elif name == "tree":
+            path = args.get("path", ".")
+            depth = args.get("depth", 2)
+            return _tree_view(path, depth)
 
         # ── NEW Tools (v7.1 Extensions) ───────────────────────────
         elif name == "docker_exec":
@@ -852,6 +879,39 @@ def running_services() -> str:
         log_event("RUNNING_SERVICES_ERROR", str(exc))
         return f"[ERROR] running_services: {exc}"
 
+
+def _tree_view(path_str: str, max_depth: int = 2) -> str:
+    """Könyvtárstruktúra vizuális megjelenítése."""
+    try:
+        root = pathlib.Path(os.path.expanduser(path_str)).resolve()
+        if not root.exists():
+            return f"[ERROR] Path does not exist: {path_str}"
+        
+        lines = [root.name + "/"]
+        
+        def _build_tree(cur_path: pathlib.Path, prefix: str, depth: int):
+            if depth > max_depth:
+                return
+            
+            try:
+                # Szűrjük ki a rejtett fájlokat (opcionális, de cleaner)
+                items = sorted([p for p in cur_path.iterdir() if not p.name.startswith(".")], 
+                              key=lambda p: (p.is_file(), p.name))
+                for i, item in enumerate(items):
+                    is_last = (i == len(items) - 1)
+                    connector = "└── " if is_last else "├── "
+                    lines.append(prefix + connector + item.name + ("/" if item.is_dir() else ""))
+                    
+                    if item.is_dir() and depth < max_depth:
+                        new_prefix = prefix + ("    " if is_last else "│   ")
+                        _build_tree(item, new_prefix, depth + 1)
+            except PermissionError:
+                lines.append(prefix + "└── [Permission Denied]")
+
+        _build_tree(root, "", 1)
+        return "\n".join(lines)
+    except Exception as e:
+        return f"[EXCEPTION] tree error: {e}"
 
 # ── Fájlrendszer műveletek (Phase A) ────────────────────────────
 def search_files(pattern: str, path: str = ".", max_results: int = 50) -> str:

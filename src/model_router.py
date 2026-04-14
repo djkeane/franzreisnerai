@@ -303,12 +303,18 @@ class SmartModelRouter:
         return result
 
     def report_failure(self, model: str) -> None:
-        """Modell hibájának rögzítése."""
+        """Modell hibájának rögzítése. 10 perc után automatikusan visszaengedélyez."""
         if model in self.models:
             self.models[model].failures += 1
             if self.models[model].failures >= 3:
                 self.models[model].enabled = False
-                print(f"⚠️  {model} letiltva (túl sok hiba)")
+                print(f"⚠️  {model} letiltva (túl sok hiba) — 10 perc múlva visszaáll")
+                import threading as _t
+                def _reenable():
+                    self.models[model].failures = 0
+                    self.models[model].enabled = True
+                    print(f"✅ {model} visszaengedélyezve (auto-reset)")
+                _t.Timer(600, _reenable).start()
 
     def reset_model_stats(self, model: str = None) -> None:
         """Modell statisztikájának alaphelyzetbe állítása."""

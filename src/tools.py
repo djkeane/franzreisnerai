@@ -315,6 +315,49 @@ def exec_tool(name: str, args: dict) -> str:
             log_event("TASK_DONE", summary[:120])
             return f"__TASK_DONE__:{summary}"
 
+        # ── NEW Tool Dispatches (v7.5) ──────────────────────────────
+        elif name == "refactor_code":
+            path = args.get("path", "")
+            refactor_type = args.get("refactor_type", "simplify")
+            return refactor_code(path, refactor_type)
+
+        elif name == "profile_code":
+            path = args.get("path", "")
+            function = args.get("function")
+            iterations = args.get("iterations", 1)
+            return profile_code(path, function, iterations)
+
+        elif name == "generate_docs":
+            path = args.get("path", "")
+            format = args.get("format", "markdown")
+            style = args.get("style", "google")
+            return generate_docs(path, format, style)
+
+        elif name == "code_review":
+            path = args.get("path", "")
+            focus = args.get("focus", "all")
+            return code_review(path, focus)
+
+        elif name == "analyze_schema":
+            schema_file = args.get("schema_file", "")
+            db_type = args.get("db_type", "postgres")
+            return analyze_schema(schema_file, db_type)
+
+        elif name == "security_scan":
+            path = args.get("path", "")
+            level = args.get("level", "medium")
+            return security_scan(path, level)
+
+        elif name == "generate_api":
+            model = args.get("model", "")
+            format = args.get("format", "openapi")
+            return generate_api(model, format)
+
+        elif name == "coverage_report":
+            path = args.get("path", "")
+            threshold = args.get("threshold", 0.8)
+            return coverage_report(path, threshold)
+
         else:
             return f"[ERROR] Ismeretlen tool: {name}"
 

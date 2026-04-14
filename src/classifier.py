@@ -20,7 +20,7 @@ class TaskType:
 # ── Kulcsszó halmazok ─────────────────────────────────────────────
 
 _AGENTIC_KEYWORDS = [
-    # Magyar cselekvés igék (action verbs)
+    # Magyar cselekvés igék (action verbs) — Phase 1
     "telepít", "telepítsd",           # install
     "készít", "készítsd", "készítsd el",  # create
     "ír", "írj", "írsd",              # write
@@ -43,29 +43,21 @@ _AGENTIC_KEYWORDS = [
     "áthelyez", "helyezd át",         # move
     "másolj", "másold le",            # copy
     "tesztel", "teszteld",            # test
-    "deploy",                         # deploy
-    "build",                          # build
-    "install",                        # install (eng)
-    "setup",                          # setup (eng)
-    "create",                         # create (eng)
+    # Advanced v7.5 verbs
+    "refaktorál", "refaktorizálj",    # refactor
+    "profiloz", "profilozd",          # profile
+    "dokumentál", "dokumentáld",      # document
+    "értékel", "értékeld",            # review/evaluate
+    "biztonsági", "biztonság",        # security
+    "elemez",                         # analyze (extended)
+    "optimalizál", "optimalizáld",    # optimize
+    # English verbs
+    "deploy", "build", "install", "setup", "create", "refactor", "optimize",
     # Kötőszavak és sorrend-jelzők
-    "majd",                           # then
-    "aztán",                          # then/after
-    "ezután",                         # then/after
-    "végül",                          # finally
-    "után",                           # after
-    "először",                        # first
-    "utána",                          # after
-    "viszont",                        # but (implies action)
-    "közben",                         # meanwhile
+    "majd", "aztán", "ezután", "végül", "után", "először", "utána", "viszont", "közben",
     # Szöveg kifejezések
-    "step by step",                   # step by step
-    "lépésről lépésre",              # step by step (hu)
-    "lépés",                          # step
-    "sorrend",                        # order/sequence
-    "workflow",                       # workflow
-    "automatikusan",                  # automatically
-    "konfigurál",                     # configure
+    "step by step", "lépésről lépésre", "lépés", "sorrend", "workflow",
+    "automatikusan", "konfigurál", "felépítsd", "szintézis",
 ]
 
 _CODE_KEYWORDS = [

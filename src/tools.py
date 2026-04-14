@@ -62,6 +62,7 @@ AGENT_TOOLS: dict[str, str] = {
     "explain_grammar":  "Mondat nyelvtani elemzése. Args: {sentence: str, focus: str?}",
     "practice_exercise":"Nyelvtani gyakorlat kitöltése. Args: {category: str?, difficulty: str?}",
     "check_grammar":    "Szöveg nyelvtani ellenőrzése. Args: {text: str}",
+    "tree":             "Könyvtárstruktúra megjelenítése tree formátumban. Args: {path: str?, depth: int?}",
 }
 
 # Patterns that are always blocked regardless of whitelist

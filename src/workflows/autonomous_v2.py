@@ -20,6 +20,16 @@ from src.security import log_event
 from src.memory.structured import StructuredKB
 from src.tools import AGENT_TOOLS, exec_tool
 from src.config import cfg
+from src.ui.display import (
+    display_welcome, 
+    display_step_header, 
+    display_action, 
+    display_result, 
+    display_think_start, 
+    display_task_done,
+    console
+)
+from rich.markdown import Markdown
 
 # Konfiguráció
 MAX_AUTONOMOUS_STEPS = 50
@@ -101,19 +111,25 @@ class AutonomousAgent:
         self.history = [{"role": "system", "content": self._build_system_prompt(task)}]
         self.history.append({"role": "user", "content": f"FELADAT: {task}\nIndulj! Kezdd a tervezéssel (PLAN)."})
 
-        print(f"\n\033[1;34m🤖 FRANZ AUTONÓM MÓD INDÍTVA\033[0m")
-        print(f"\033[94mFeladat:\033[0m {task}\n")
+        display_welcome()
+        console.print(f"\n[bold cyan]CÉL:[/bold cyan] {task}\n")
 
         while self.steps_count < MAX_AUTONOMOUS_STEPS:
             self.steps_count += 1
-            print(f"\033[1;30m[Lépés {self.steps_count}/{MAX_AUTONOMOUS_STEPS}]\033[0m")
+            display_step_header(self.steps_count, MAX_AUTONOMOUS_STEPS)
             
             try:
                 # 1. GENERÁLÁS (Gondolkodás + Tool választás)
-                response = llm_gateway.chat(self.history, task_type="code")
+                with display_think_start():
+                    response = llm_gateway.chat(self.history, task_type="code")
+                
                 if not response:
-                    print("\033[91mHiba: Üres válasz az LLM-től.\033[0m")
+                    console.print("[bold red]Hiba: Üres válasz az LLM-től.[/bold red]")
                     break
+
+                # Megjelenítjük a gondolkodást (ha nem tool hívás az egész)
+                if response.strip():
+                    console.print(Markdown(strip_tool_blocks(response)))
 
                 # Kivonjuk a tool hívásokat
                 tool_calls = parse_tool_calls(response)
@@ -140,8 +156,7 @@ class AutonomousAgent:
                     reason = tc.get("reason", "Nincs megadva")
                     expected = tc.get("expected_outcome", "Siker")
 
-                    print(f"\033[36mAction:\033[0m {tool_name}")
-                    print(f"\033[36mReason:\033[0m {reason}")
+                    display_action(tool_name, reason)
                     self.all_tools_used.append(tool_name)
 
                     # Végrehajtás
@@ -166,6 +181,8 @@ class AutonomousAgent:
                     else:
                         status = "success" if "[ERROR]" not in str(result) else "partial_fail"
 
+                    display_result(status, str(result))
+
                     # 3. NAPLÓZÁS (Logic Log)
                     self._log_decision(
                         step_type="EXECUTE", # A ciklus része
@@ -179,7 +196,7 @@ class AutonomousAgent:
                     
                     if tool_name == "task_done":
                         summary = args.get("summary", "Befejezve.")
-                        print(f"\n\033[1;92m✅ FELADAT KÉSZ: {summary}\033[0m")
+                        display_task_done(summary)
                         
                         # Memória mentése (Phase D.3 log_agent_session-t használva)
                         all_tools = [tc.get("tool") for tc in tool_calls] # Ez csak az utolsó lépés, nem jó

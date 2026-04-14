@@ -128,6 +128,7 @@ def ollama_chat(
         "model": model,
         "messages": messages,
         "stream": stream,
+        "keep_alive": "30m",  # model marad VRAM-ban 30 percig tétlenség után
         "options": {"temperature": 0.2, "num_ctx": 8192},
     }
     last_err: Exception = RuntimeError("No Ollama URLs configured")

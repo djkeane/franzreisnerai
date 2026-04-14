@@ -223,11 +223,13 @@ def _cpu_ram() -> str:
         return "CPU/RAM info nem elérhető"
 
 
-def build_system_prompt(topic: str, query: str = "") -> str:
+def build_system_prompt(topic: str, query: str = "", task_type: str = "general") -> str:
+    """Build optimized system prompt based on task type."""
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cwd = os.getcwd()
     branch = _git_branch()
     hw = _cpu_ram()
+
     base = (
         "Te vagy Franz, a DömösAiTech 2026 intelligens terminál-asszisztense.\n"
         "Magyarul válaszolsz, tömören és pontosan.\n\n"
@@ -238,11 +240,52 @@ def build_system_prompt(topic: str, query: str = "") -> str:
         f"Rendszer:  {hw}\n"
         f"Platform:  {platform.system()} {platform.release()}"
     )
+
+    # Task-type specifikus instrukciók
+    task_guides = {
+        "code": (
+            "\n\n## KÓDOLÁSI UTASÍTÁSOK\n"
+            "1. Precizitás: szintaxis 100% helyes legyen\n"
+            "2. Magyarázat: soronként értelmezd a logikát\n"
+            "3. Edge cases: kezeld az üres/null/negatív inputokat\n"
+            "4. Teszt: gondolj rá, hogyan tesztelné valaki\n"
+            "5. Beste practices: típusok, error handling, comments"
+        ),
+        "verifier": (
+            "\n\n## ELLENŐRZÉSI UTASÍTÁSOK\n"
+            "1. Logika: Működik az algoritmus helyesen?\n"
+            "2. Szintaxis: Van szintaktikai hiba?\n"
+            "3. Edge casos: Kezel-e határeseteket?\n"
+            "4. Teljesítmény: Méretezik-e az algoritmusok?\n"
+            "5. Biztonsá: Van biztonsági rés?"
+        ),
+        "planner": (
+            "\n\n## TERVEZÉSI UTASÍTÁSOK\n"
+            "1. Felbontás: bonts fel alfoladatokra\n"
+            "2. Sorrend: mi az optimális végrehajtási sorrend\n"
+            "3. Függőségek: mely lépések párhuzamosíthatók?\n"
+            "4. Idő: becsüld meg az egyes fázisok időigényét\n"
+            "5. Risz­kók: mik a lehetséges problémák?"
+        ),
+        "research": (
+            "\n\n## KUTATÁSI UTASÍTÁSOK\n"
+            "1. Kontextus: értelmezd az aktuális ismereteket\n"
+            "2. Forrás: hivatkozz megbízható forrásokon\n"
+            "3. Összefoglaló: szintézizelj a fő pontokat\n"
+            "4. Újdonság: mit tanultál az egészből?\n"
+            "5. Gyakorlat: hogyan lehetne alkalmazni?"
+        ),
+    }
+
+    if task_type in task_guides:
+        base += task_guides[task_type]
+
     # RAG: tanult tudás injektálása ha van releváns találat
     if query:
         ctx = context_for(query, top_k=3)
         if ctx:
             base += f"\n\n{ctx}"
+
     return base
 
 

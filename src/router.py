@@ -78,7 +78,7 @@ _DIR_RE = re.compile(
 )
 
 _SERVERS_RE = re.compile(
-    r"(szerver|port|szolgáltatás|daemon|futó\s+folyamat|listening|halgatóz|hallgatóz|szerv|mik\s+futnak|keresd\s+meg\s+a\s+szervereket)",
+    r"(szerver|port|szolgáltatás|daemon|futó\s+(folyamat|proc)|listening|halgatóz|hallgatóz|szerv|mik\s+futnak|keresd\s+meg\s+a\s+szervereket|futó|aktív|ellenőrizd)",
     re.IGNORECASE,
 )
 

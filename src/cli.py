@@ -47,6 +47,7 @@ from src.router import natural_to_command
 from src.security import FRANZ_DIR, log_event
 from src.classifier import classify  # Phase A: agentic task detection
 from src.tools import AGENT_TOOLS  # Phase A: tool registry
+from src.team import developer_team, list_agents, get_agent_by_role  # Developer team v8.0
 from src.workflows.code_improve import coding_loop, generate_project
 from src.workflows.auto_learn import auto_learn
 from src.workflows.autonomous import get_autonomous
@@ -798,6 +799,117 @@ def handle_agent_commands(user_input: str, history: List[Dict], registry) -> boo
         history.append({"role": "user", "content": task})
         history.append({"role": "assistant", "content": answer})
         log_event("AGENT_RUN", f"{agent_name}: {task[:80]}")
+        return True
+
+    return False
+
+
+def handle_team_commands(user_input: str, history: List[Dict]) -> bool:
+    """
+    Developer Team parancsok (v8.0):
+      /team                    — Csapat státusza
+      /team-list              — Összes ágent listázása
+      /team-task <feladat>    — Feladat delegálása az egész csapatnak
+      /team <agent_id> <task> — Feladat egy specifikus agenthez
+    """
+    stripped = user_input.strip()
+
+    # /team — csapat státusza
+    if stripped == "/team":
+        status = developer_team.team_status()
+        print(f"\n👥 FRANZ DEVELOPER TEAM STATUS\n")
+        print(f"  Team Size: {status['team_size']} agents")
+        print(f"  Total Tasks: {status['total_tasks']}")
+        print(f"  Total Workload: {status['total_workload']} tasks\n")
+        print(f"  {'Agent':<25} {'Role':<40} {'Tasks':<6}")
+        print("-" * 75)
+        for agent_info in status['agents']:
+            name = agent_info['name'][:24]
+            role = agent_info['role'][:39]
+            tasks = agent_info['tasks']
+            print(f"  {name:<25} {role:<40} {tasks:<6}")
+        print()
+        return True
+
+    # /team-list — összes ágent listázása
+    if stripped == "/team-list":
+        agents = list_agents()
+        print(f"\n📋 FRANZ DEVELOPER TEAM — ALL AGENTS\n")
+        for agent in agents:
+            print(f"  {agent.name}")
+            print(f"    • Role: {agent.role}")
+            print(f"    • ID: {agent.id}")
+            print(f"    • Expertise: {', '.join(agent.expertise[:3])}...")
+            print()
+        return True
+
+    # /team-task <feladat> — teljes csapat feladathoz
+    if stripped.startswith("/team-task "):
+        task = stripped[11:].strip()
+        if not task:
+            print("[ERROR] Használat: /team-task <feladat>")
+            return True
+
+        print(f"\n🚀 DELEGATING TASK TO DEVELOPER TEAM\n")
+        print(f"Task: {task}\n")
+
+        # Run team task
+        try:
+            report = developer_team.run_team_task(task)
+
+            # Print report
+            print(report.synthesis)
+
+            # Log to memory
+            topic = get_active_topic()
+            save_memory(topic, "user", f"[TEAM TASK] {task}")
+            save_memory(topic, "assistant", report.synthesis)
+            history.append({"role": "user", "content": f"[TEAM TASK] {task}"})
+            history.append({"role": "assistant", "content": report.synthesis})
+            log_event("TEAM_TASK", f"success, confidence={report.overall_confidence:.2f}")
+
+        except Exception as e:
+            print(f"[ERROR] Team task failed: {e}")
+            log_event("TEAM_ERROR", str(e))
+
+        return True
+
+    # /team <agent_id> <task> — specifikus agenthez
+    if stripped.startswith("/team "):
+        rest = stripped[6:].strip()
+        parts = rest.split(None, 1)
+        if len(parts) < 2:
+            print("[ERROR] Használat: /team <agent_id> <task>")
+            print(f"  Available agents: {', '.join(list(developer_team.team.keys()))}")
+            return True
+
+        agent_id, task = parts[0], parts[1]
+        agent = developer_team.team.get(agent_id)
+        if not agent:
+            print(f"[ERROR] Unknown agent: {agent_id}")
+            return True
+
+        print(f"\n🤖 DELEGATING TO {agent.name}\n")
+        print(f"Task: {task}\n")
+
+        try:
+            response = developer_team.dispatch_to_agent(agent_id, task)
+            print(f"Status: {response.status.value}")
+            print(f"Confidence: {response.confidence:.0%}")
+            print(f"Time: {response.time_ms:.0f}ms\n")
+            print(response.output)
+
+            topic = get_active_topic()
+            save_memory(topic, "user", f"[{agent.name}] {task}")
+            save_memory(topic, "assistant", response.output)
+            history.append({"role": "user", "content": f"[{agent.name}] {task}"})
+            history.append({"role": "assistant", "content": response.output})
+            log_event("AGENT_DISPATCH", f"{agent.name}: {task[:80]}")
+
+        except Exception as e:
+            print(f"[ERROR] Agent dispatch failed: {e}")
+            log_event("AGENT_ERROR", str(e))
+
         return True
 
     return False

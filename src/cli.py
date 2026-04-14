@@ -585,8 +585,13 @@ def main() -> None:
         log_event("USER_INPUT", stripped[:200])
         save_memory(topic, "user", stripped)
 
+        # Auto-routing: kód kérdés → CodeAgent modell, egyéb → default
+        from src.router import route
+        routed_model, agent_type = route(stripped)
+        if agent_type == "code":
+            print(f"\033[90m[code→{routed_model}]\033[0m ")
         print()
-        answer = agent_loop(messages, model=pick_best_model())
+        answer = agent_loop(messages, model=routed_model)
         print()
 
         save_memory(topic, "assistant", answer)

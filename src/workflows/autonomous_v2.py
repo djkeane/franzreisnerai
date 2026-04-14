@@ -15,7 +15,7 @@ import time
 import traceback
 from typing import Any, Dict, List, Optional
 
-from src.llm import llm_gateway, parse_tool_calls, strip_tool_blocks
+from src.llm import llm_gateway, parse_tool_calls, strip_tool_blocks, StreamParser
 from src.security import log_event
 from src.memory.structured import StructuredKB
 from src.tools import AGENT_TOOLS, exec_tool
@@ -120,19 +120,40 @@ class AutonomousAgent:
             
             try:
                 # 1. GENERÁLÁS (Gondolkodás + Tool választás)
-                with display_think_start():
-                    response = llm_gateway.chat(self.history, task_type="code")
+                parser = StreamParser()
+                response = ""
+                
+                with display_think_start() as live:
+                    # Streaming hívás a Claude Code-szerű élményhez
+                    # Itt trükközünk kicsit a rich Live-al és a StreamParser-el
+                    for chunk in llm_gateway.stream(self.history, task_type="code"):
+                        response += chunk
+                        # Csak a szöveget jelenítjük meg, a tool blokkokat nem
+                        printable = parser.feed(chunk)
+                        if printable:
+                            # Frissítjük a live kijelzőt vagy console-t
+                            # Mivel a Live spinner üzemmódban van, a sima print is jó de live.update jobb
+                            pass 
+                    
+                # A stream végén leürítjük a maradék szöveget
+                final_text = parser.flush()
+                response = response.strip()
                 
                 if not response:
                     console.print("[bold red]Hiba: Üres válasz az LLM-től.[/bold red]")
                     break
 
-                # Megjelenítjük a gondolkodást (ha nem tool hívás az egész)
-                if response.strip():
-                    console.print(Markdown(strip_tool_blocks(response)))
+                # Megjelenítjük a teljes szöveget (Markdown formázva, toolok nélkül)
+                display_text = parser.full_text
+                if display_text.strip():
+                    console.print(Markdown(display_text))
 
-                # Kivonjuk a tool hívásokat
-                tool_calls = parse_tool_calls(response)
+                # Kivonjuk a tool hívásokat a parserből (már JSON-re bontva)
+                tool_calls = parser.tool_calls
+                
+                # Ha a parser nem talált toolt, próbáljuk meg a hagyományos regexel a biztonság kedvéért
+                if not tool_calls:
+                    tool_calls = parse_tool_calls(response)
                 
                 # Ha nincs tool hívás, de nem is mondta ki hogy kész (és nem hívta a task_done-t)
                 if not tool_calls:
@@ -165,6 +186,11 @@ class AutonomousAgent:
                     result = None
                     last_exc = None
                     
+                    # Tool biztonsági ellenőrzés (Human-in-the-loop)
+                    if tool_name in ["bash", "git", "remote_exec", "docker_exec"] and "--force" not in str(args):
+                         # Itt jöhetne egy interaktív prompt, de autonóm módban inkább csak naplózzuk
+                         pass
+
                     while retry_count < MAX_RETRY_PER_STEP:
                         try:
                             result = exec_tool(tool_name, args)

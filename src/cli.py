@@ -1302,6 +1302,10 @@ def main() -> None:
             answer = agent_loop(messages, model=routed_model)
         print()
 
+        if not answer.strip():
+            answer = "Sajnálom, de nem kaptam választ a modelltől. Kérlek, próbáld újra egy kicsit másképp fogalmazva!"
+            print(f"\033[31m[ERROR] Üres válasz az LLM-től.\033[0m")
+
         save_memory(topic, "assistant", answer)
         history.append({"role": "user", "content": stripped})
         history.append({"role": "assistant", "content": answer})

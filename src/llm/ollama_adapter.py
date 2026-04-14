@@ -44,8 +44,7 @@ class OllamaClient(BaseLLMClient):
         try:
             resp = ollama_chat(self.model, request.messages, stream=True)
             if resp is None:
-                yield "[HIBA] Ollama nem válaszolt"
-                return
+                raise RuntimeError("Ollama nem válaszolt")
             for raw_line in resp.iter_lines():
                 if not raw_line:
                     continue
@@ -57,4 +56,6 @@ class OllamaClient(BaseLLMClient):
                 except Exception:
                     continue
         except Exception as exc:
-            yield f"\n[HIBA] Ollama stream: {exc}"
+            log_event("OLLAMA_STREAM_ERROR", str(exc))
+            # Fontos: Raise, hogy a gateway failover-elhessen
+            raise exc

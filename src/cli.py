@@ -55,7 +55,15 @@ from src.workflows.autonomous_v2 import start_autonomous_task
 
 # ── Vibe Mode Integration (Franz AI v2.0) ──────────────────────────
 try:
-    from DömösAiTech.franzai.integrations import handle_vibe_commands
+    import importlib.util
+    vibe_spec = importlib.util.spec_from_file_location(
+        "franzai",
+        "/Users/domoslaszlo/DömösAiTech/franzai/__init__.py"
+    )
+    franzai = importlib.util.module_from_spec(vibe_spec)
+    sys.modules["franzai"] = franzai
+    vibe_spec.loader.exec_module(franzai)
+    from franzai.integrations import handle_vibe_commands
     _VIBE_AVAILABLE = True
 except ImportError:
     _VIBE_AVAILABLE = False

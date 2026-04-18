@@ -52,6 +52,14 @@ from src.workflows.code_improve import coding_loop, generate_project
 from src.workflows.auto_learn import auto_learn
 from src.workflows.autonomous import get_autonomous
 from src.workflows.autonomous_v2 import start_autonomous_task
+
+# ── Vibe Mode Integration (Franz AI v2.0) ──────────────────────────
+try:
+    from DömösAiTech.franzai.integrations import handle_vibe_commands
+    _VIBE_AVAILABLE = True
+except ImportError:
+    _VIBE_AVAILABLE = False
+
 from src.tools import (
     cat_file,
     disk_usage,
@@ -1391,6 +1399,11 @@ def main() -> None:
 
         # ── Workflow parancsok (kódolás, webtanulás, loop) ─────
         if handle_workflow_commands(stripped):
+            continue
+
+        # ── Vibe Mode parancsok (Franz AI v2.0) ─────────────────
+        if _VIBE_AVAILABLE and handle_vibe_commands(stripped):
+            log_event("VIBE_CMD", stripped[:100])
             continue
 
         # ── Agens parancsok ─────────────────────────────────────
